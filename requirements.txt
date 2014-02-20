@@ -1,4 +1,4 @@
-pydle
+git+https://github.com/Shizmob/pydle
 peewee
 pyyaml
 requests
@@ -15,5 +15,5 @@ docutils
 tornado
 twitter
 pathlib
-pyenchant
+git+https://github.com/rfk/pyenchant
 textblob
