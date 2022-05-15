@@ -67,10 +67,9 @@ def search(ctx, term, num: int=None):
     statistics, = r["items"]
     statistics = statistics["statistics"]
 
-    ctx.respond("({num} of {total}) {title} (+{likes}/-{dislikes}, {views} views): http://youtu.be/{video_id}".format(
+    ctx.respond("({num} of {total}) {title} (+{likes}, {views} views): http://youtu.be/{video_id}".format(
         title=results[num]["snippet"]["title"],
         likes=statistics["likeCount"],
-        dislikes=statistics["dislikeCount"],
         views=statistics["viewCount"],
         video_id=results[num]["id"]["videoId"],
         num=num + 1,
@@ -100,11 +99,10 @@ def lookup(ctx, video_id):
 
     r, = r["items"]
     duration = r["contentDetails"]["duration"].lower().replace("p", "").replace("t", "")
-    ctx.message("\x02YouTube:\x02 {title} ({duration}, +{likes}/-{dislikes}, {views} views)".format(
+    ctx.message("\x02YouTube:\x02 {title} ({duration}, +{likes}, {views} views)".format(
         title=r["snippet"]["title"],
         duration=duration,
         likes=r["statistics"].get('likeCount', '0'),
-        dislikes=r["statistics"].get('dislikeCount', '0'),
         views=r["statistics"]["viewCount"],
     ))
 
