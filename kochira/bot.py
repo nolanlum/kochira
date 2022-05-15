@@ -12,7 +12,7 @@ from peewee import SqliteDatabase
 import signal
 import yaml
 
-from pydle.async import EventLoop, coroutine
+from pydle.asynchronous import EventLoop, coroutine
 
 from . import config
 from .client import Client
@@ -28,7 +28,7 @@ from kochira import services
 logger = logging.getLogger(__name__)
 
 
-class ServiceConfigLoader(collections.Mapping):
+class ServiceConfigLoader(collections.abc.Mapping):
     def __init__(self, bot, values):
         self.bot = bot
         self.configs = values
@@ -313,7 +313,7 @@ class Bot:
         """
 
         with open(self.config_file, "r") as f:
-            self.config = self.config_class(yaml.load(f))
+            self.config = self.config_class(yaml.safe_load(f))
 
     def _handle_sighup(self, signum, frame):
         logger.info("Received SIGHUP; running SIGHUP hooks and rehashing")

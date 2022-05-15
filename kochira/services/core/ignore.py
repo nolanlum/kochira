@@ -94,6 +94,6 @@ def ignore_message(ctx, target, origin, message):
         hostname=ctx.client.users[origin]["hostname"]
     )
 
-    if Ignore.select().where(Expression(hostmask, "ilike", fn.replace(Ignore.hostmask, "*", "%")),
+    if Ignore.select().where(Expression(hostmask, "like", fn.replace(Ignore.hostmask, "*", "%")),
                              Ignore.network == ctx.client.name).exists():
         return service.EAT

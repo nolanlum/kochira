@@ -43,6 +43,7 @@ quotes
 include/
 local/
 share/
+pyvenv.cfg
 
 # vim
 *.swp

@@ -4,7 +4,7 @@ import peewee
 import collections
 from .db import Model, database
 
-from pydle.async import coroutine
+from pydle.asynchronous import coroutine
 
 
 class JSONField(peewee.TextField):
@@ -27,7 +27,7 @@ class UserDataKVPair(Model):
         )
 
 
-class UserData(collections.MutableMapping):
+class UserData(collections.abc.MutableMapping):
     def __init__(self, bot, network, account):
         self.bot = bot
         self.network = network

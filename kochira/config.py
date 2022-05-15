@@ -59,7 +59,7 @@ class ConfigMeta(abc.ABCMeta):
         return newcls
 
 
-class Config(collections.MutableMapping, metaclass=ConfigMeta):
+class Config(collections.abc.MutableMapping, metaclass=ConfigMeta):
     def __init__(self, values=None):
         if values is None:
             values = {}
