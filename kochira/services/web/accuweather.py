@@ -19,11 +19,11 @@ class Config(Config):
     api_key = config.Field(doc="Accuweather API key.")
 
 
-@service.command(r"!weather(?: (?P<where>.+))?")
-@service.command(r"weather(?: (?:for|in) (?P<where>.+))?", mention=True)
+@service.command(r"!weather(?: (?P<unit>[cf])(?:elsius|ahrenheit)?)?(?: (?P<where>.+))?")
+@service.command(r"weather(?: (?:for|in) (?P<where>.+))?(?: in (?P<unit>[cf])(?:elsius|ahrenheit)?)?", mention=True)
 @background
 @coroutine
-def weather(ctx, where=None):
+def weather(ctx, where=None, unit=None):
     """
     Weather.
 
@@ -66,7 +66,10 @@ def weather(ctx, where=None):
         r['AdministrativeArea']['ID'],
     )
 
-    if r['AdministrativeArea']['CountryID']  == "US":
+    is_us = r['AdministrativeArea']['CountryID'] == "US"
+    force_f = unit and unit.upper() == "F"
+    force_c = unit and unit.upper() == "C"
+    if (is_us or force_f) and not force_c:
         def _unitize(nonus, us):
             return us
     else:
@@ -96,15 +99,17 @@ def weather(ctx, where=None):
     wind = observation["Wind"]["Speed"][_unitize("Metric", "Imperial")]["Value"]
     wind_dir = observation["Wind"]["Direction"]["Localized"]
     humidity = observation["RelativeHumidity"]
+    dew_point = observation["DewPoint"][_unitize("Metric", "Imperial")]["Value"]
     precip = observation["PrecipitationSummary"]["Precipitation"][_unitize("Metric", "Imperial")]["Value"]
     weather = observation["WeatherText"]
 
-    ctx.respond(ctx._("Today's weather for {place} is: {weather}, {temp} °{cf} (feels like {feelslike} °{cf}), wind from {wind_dir} at {wind} {kphmph}, {humidity}% humidity, {precip} {mmin} precipitation").format(
+    ctx.respond(ctx._("Today's weather for {place} is: {weather}, {temp} °{cf} (feels like {feelslike} °{cf}), dew point {dew_point} °{cf}, wind from {wind_dir} at {wind} {kphmph}, {humidity}% humidity, {precip} {mmin} precipitation").format(
         place=place,
         weather=weather,
         feelslike=feelslike,
         temp=temp,
         cf=_unitize("C", "F"),
+        dew_point=dew_point,
         wind_dir=wind_dir,
         wind=wind,
         kphmph=_unitize("km/h", "mph"),
