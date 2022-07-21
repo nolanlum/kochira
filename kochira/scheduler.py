@@ -1,6 +1,6 @@
-import threading
+import asyncio
+from concurrent.futures import Future
 import logging
-from pydle.asynchronous import Future
 
 from .service import HookContext
 
@@ -32,9 +32,11 @@ class Scheduler:
         timeout = None
         ctx = HookContext(_task.service, self.bot)
 
-        def _handler():
+        async def _handler():
             # ghetto-ass code for removing the timeout on completion
             nonlocal timeout
+
+            await asyncio.sleep(_time.total_seconds())
 
             r = _task(ctx, *_args, **_kwargs)
 
@@ -43,9 +45,9 @@ class Scheduler:
 
             self.timeouts[_task.service.name].remove(timeout)
 
-        timeout = self.bot.event_loop.schedule_in(_time, _handler)
+        timeout = self.bot.event_loop.create_task(_handler, name=f"timerTask-{_task.service.name}")
 
-        self.timeouts.setdefault(_task.service.name, set([])).add(timeout)
+        self.timeouts.setdefault(_task.service.name, set()).add(timeout)
         return (_task.service.name, timeout)
 
     def schedule_every(self, _interval, _task, *_args, **_kwargs):
@@ -59,29 +61,27 @@ class Scheduler:
 
         ctx = HookContext(_task.service, self.bot)
 
-        def _handler():
-            if period_id not in self.periods.get(_task.service.name, set([])):
-                return False
+        async def _handler():
+            while period_id in self.periods.get(_task.service.name, {}):
+                await asyncio.sleep(_interval)
 
-            r = _task(ctx, *_args, **_kwargs)
+                r = _task(ctx, *_args, **_kwargs)
 
-            if isinstance(r, Future):
-                r.add_done_callback(self._error_handler)
+                if isinstance(r, Future):
+                    r.add_done_callback(self._error_handler)
 
-            return True
-
-        self.bot.event_loop.schedule_periodically(_interval, _handler)
-        self.periods.setdefault(_task.service.name, set([])).add(period_id)
+        recurring_task = self.bot.event_loop.create_task(_handler, name=f"recurringTimerTask-{_task.service.name}")
+        self.periods.setdefault(_task.service.name, {})[period_id] = recurring_task
         return (_task.service.name, period_id)
 
     def unschedule_timeout(self, timeout):
         service_name, timeout = timeout
-        self.bot.event_loop.unschedule(timeout)
+        timeout.cancel()
         self.timeouts[service_name].remove(timeout)
 
     def unschedule_period(self, period):
         service_name, period_id = period
-        self.periods[service_name].remove(period_id)
+        del self.periods[service_name][period_id]
 
     def unschedule_service(self, service):
         logger.info("Unscheduling all tasks for service %s", service.name)

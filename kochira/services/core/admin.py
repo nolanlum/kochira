@@ -138,7 +138,7 @@ def restart(ctx):
     for ctx.client in list(ctx.bot.clients.values()):
         ctx.client.quit(ctx._("Restarting..."))
 
-    @ctx.bot.event_loop.schedule
+    @ctx.bot.event_loop.call_soon
     def _restart():
         # The following code is ported from Tornado.
         # http://www.tornadoweb.org/en/branch2.4/_modules/tornado/autoreload.html

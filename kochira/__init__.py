@@ -1,26 +1,28 @@
+import asyncio
+
+import click
+
 from .bot import Bot
 
-def main():
+
+@click.command
+@click.option('--config', default='config.yml', help="Configuration file.")
+@click.option('--console', is_flag=True, default=False, help="Whether to start the console instead of the bot.")
+def main(config: str, console: bool) -> None:
     import os
     import logging
-    from tornado.options import define, options, parse_command_line
 
-    define("config", default="config.yml", help="Configuration file.")
-    define("console", default=False, help="Whether to start the console instead of the bot.")
-
-    parse_command_line()
-
-    if not os.path.exists(options.config):
+    if not os.path.exists(config):
         logging.error("""\
 Could not find the configuration file: %s
 
 If this is your first time starting Kochira, copy the file `config.yml.dist` to
 `config.yml` and edit it appropriately.
-""", options.config)
+""", config)
         return
 
-    bot = Bot(options.config)
-    if options.console:
+    bot = Bot(config)
+    if console:
         banner = """\
 Welcome to the Kochira console!
 
@@ -37,4 +39,4 @@ bot     -> current bot
             IPython.embed(banner1=banner, user_ns=my_locals)
 
     else:
-        bot.run()
+        asyncio.run(bot.run())

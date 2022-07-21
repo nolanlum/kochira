@@ -7,8 +7,7 @@ Run queries on Google and return results.
 import requests
 
 from kochira import config
-from kochira.service import Service, background, Config, coroutine
-from kochira.userdata import UserData
+from kochira.service import Service, background, Config
 
 service = Service(__name__, __doc__)
 

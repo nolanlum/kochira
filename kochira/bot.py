@@ -1,27 +1,26 @@
-from concurrent.futures import ThreadPoolExecutor, Future
-
+import asyncio
 import collections
 import functools
+import heapq
 import imp
 import importlib
 import locale
-import heapq
 import logging
 import multiprocessing
-from peewee import SqliteDatabase
 import signal
-import yaml
+from concurrent.futures import ThreadPoolExecutor
+from tracemalloc import stop
+from typing import Dict
 
-from pydle.asynchronous import EventLoop, coroutine
+import yaml
+from peewee import SqliteDatabase
 
 from . import config
 from .client import Client
 from .db import database
 from .scheduler import Scheduler
-from .util import Expando
 from .service import Service, BoundService, HookContext, Config as ServiceConfig
 from .userdata import UserDataKVPair
-
 from kochira import services
 
 
@@ -131,44 +130,62 @@ class Bot:
     """
     The core bot.
     """
+    services: Dict[str, Service]
+    clients: Dict[str, Client]
+    clients_tasks: Dict[str, asyncio.Task]
 
-    def __init__(self, config_file="config.yml"):
+    config_class: config.Config
+    config_file: str
+
+    event_loop: asyncio.AbstractEventLoop
+    watchdog_task: asyncio.Task
+    stop_fut: asyncio.Future
+
+    def __init__(self, config_file: str):
         self.services = {}
         self.clients = {}
-        self.event_loop = EventLoop()
+        self.clients_tasks = {}
 
         self.config_class = _config_class_factory(self)
         self.config_file = config_file
 
-        self.stopping = False
+        self.stop_fut = None
+        self.watchdog_task = None
 
         self.rehash()
         self._connect_to_db()
 
-    def run(self):
+    async def run(self):
         self.executor = ThreadPoolExecutor(self.config.core.max_workers or multiprocessing.cpu_count())
         self.scheduler = Scheduler(self)
 
-        signal.signal(signal.SIGHUP, self._handle_sighup)
+        self.event_loop = asyncio.get_running_loop()
+        self.event_loop.add_signal_handler(signal.SIGHUP, self._handle_sighup)
+        self.stop_fut = self.event_loop.create_future()
 
+        async def _watchdog():
+            import faulthandler
+            while True:
+                faulthandler.dump_traceback_later(10, exit=True)
+                await asyncio.sleep(5)        
+        self.watchdog_task = self.event_loop.create_task(_watchdog())
+        
         self._load_services()
         self._connect_to_irc()
 
-        signal.signal(signal.SIGTERM, self._handle_sigterm)
-        signal.signal(signal.SIGINT, self._handle_sigterm)
+        self.event_loop.add_signal_handler(signal.SIGTERM, self._handle_sigterm)
+        self.event_loop.add_signal_handler(signal.SIGINT, self._handle_sigterm)
 
-        self.event_loop.run()
+        await self.stop_fut
+        await asyncio.gather(*self.clients_tasks.values())
 
-    def stop(self):
-        self.stopping = True
-        self.event_loop.stop()
-        for service in list(self.services.keys()):
-            self.unload_service(service)
+        self._unload_services()
 
     def connect(self, name):
-        client = Client.from_config(self, name,
-                                    self.config.clients[name])
+        client = Client.from_config(self, name, self.config.clients[name])
         self.clients[name] = client
+        self.clients_tasks[name] = asyncio.create_task(client.run(), name=name)
+        
         return client
 
     def disconnect(self, name):
@@ -176,7 +193,7 @@ class Bot:
 
         # schedule this for the next iteration of the ioloop so we can handle
         # pending messages
-        self.event_loop.schedule(client.quit)
+        self.clients_tasks[name] = asyncio.create_task(client.quit())
 
         del self.clients[name]
 
@@ -198,29 +215,16 @@ class Bot:
                     self.load_service(service)
                 except:
                     pass # it gets logged
+    
+    def _unload_services(self):
+        for service in list(self.services.keys()):
+            self.unload_service(service)
 
-    def defer_from_thread(self, fn, *args, **kwargs):
-        fut = Future()
+    def defer_from_thread(self, coro):
+        return asyncio.run_coroutine_threadsafe(coro, self.event_loop)
 
-        @coroutine
-        def _callback():
-            try:
-                r = fn(*args, **kwargs)
-            except Exception as e:
-                fut.set_exception(e)
-            else:
-                if isinstance(r, Future):
-                    try:
-                        r = yield r
-                    except Exception as e:
-                        fut.set_exception(e)
-                    else:
-                        fut.set_result(r)
-                else:
-                    fut.set_result(r)
-
-        self.event_loop.schedule(_callback)
-        return fut
+    def result_from_thread(self, coro):
+        return self.defer_from_thread(coro).result()
 
     def load_service(self, name, reload=False):
         """
@@ -315,19 +319,19 @@ class Bot:
         with open(self.config_file, "r") as f:
             self.config = self.config_class(yaml.safe_load(f))
 
-    def _handle_sighup(self, signum, frame):
+    def _handle_sighup(self):
         logger.info("Received SIGHUP; running SIGHUP hooks and rehashing")
 
         try:
             self.rehash()
-        except Exception as e:
+        except Exception:
             logger.exception("Could not rehash configuration")
 
         self.run_hooks("sighup")
 
-    def _handle_sigterm(self, signum, frame):
-        if self.stopping:
+    def _handle_sigterm(self):
+        if self.stop_fut.done():
             raise KeyboardInterrupt
 
         logger.info("Received termination signal; unloading all services")
-        self.stop()
+        self.stop_fut.set_result(True)

@@ -7,8 +7,7 @@ Get weather data from Accuweather.
 import requests
 
 from kochira import config
-from kochira.service import Service, background, Config, coroutine
-from kochira.userdata import UserData
+from kochira.service import Service, background, Config
 
 
 service = Service(__name__, __doc__)
@@ -22,7 +21,6 @@ class Config(Config):
 @service.command(r"!weather(?: (?P<unit>[cf])(?:elsius|ahrenheit)?)?(?: (?P<where>.+))?")
 @service.command(r"weather(?: (?:for|in) (?P<where>.+))?(?: in (?P<unit>[cf])(?:elsius|ahrenheit)?)?", mention=True)
 @background
-@coroutine
 def weather(ctx, where=None, unit=None):
     """
     Weather.

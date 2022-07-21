@@ -4,9 +4,9 @@ Account management.
 Allows users to manage their account information.
 """
 
-from pydle.asynchronous import Future
+import asyncio
 
-from kochira.service import Service, coroutine
+from kochira.service import Service
 from kochira.userdata import UserData
 
 service = Service(__name__, __doc__)
@@ -18,15 +18,14 @@ def init_confirmations(ctx):
 
 
 def wait_for_confirmation(storage, account, network, alt_account, alt_network):
-    confirmation = Future()
+    confirmation = asyncio.get_running_loop().create_future()
     storage.confirmations[account, network,
                           alt_account, alt_network] = confirmation
     return confirmation
 
 
 @service.command(r"!link (?P<account>\S+) (?P<network>\S+)")
-@coroutine
-def link(ctx, account, network):
+async def link(ctx, account, network):
     """
     Link account.
 
@@ -36,7 +35,7 @@ def link(ctx, account, network):
     """
 
     try:
-        user_data = yield ctx.lookup_user_data()
+        user_data = await ctx.lookup_user_data()
     except UserData.DoesNotExist:
         ctx.respond(ctx._("Please log in to NickServ before linking an account."))
         return
@@ -48,7 +47,7 @@ def link(ctx, account, network):
         ctx.respond(ctx._("I can't find that network."))
         return
 
-    alt_user_data = yield UserData.lookup_default(alt_client, account)
+    alt_user_data = await UserData.lookup_default(alt_client, account)
 
     if user_data.account == alt_user_data.account and \
        user_data.network == alt_user_data.network:
@@ -64,8 +63,7 @@ def link(ctx, account, network):
         network=ctx.client.network
     ))
 
-    yield wait_for_confirmation(ctx.storage, ctx.origin, ctx.client.network,
-                                account, network)
+    await wait_for_confirmation(ctx.storage, ctx.origin, ctx.client.network, account, network)
 
     data = dict(alt_user_data)
     data.update(user_data)
@@ -86,8 +84,7 @@ def link(ctx, account, network):
 
 
 @service.command(r"!confirmlink (?P<account>\S+) (?P<network>\S+)")
-@coroutine
-def confirm_link(ctx, account, network):
+async def confirm_link(ctx, account, network):
     """
     Confirm link.
 
@@ -96,7 +93,7 @@ def confirm_link(ctx, account, network):
     """
 
     try:
-        user_data = yield ctx.lookup_user_data()
+        user_data = await ctx.lookup_user_data()
     except UserData.DoesNotExist:
         ctx.respond(ctx._("Please log in to NickServ before confirming linkage."))
         return

@@ -1,4 +1,5 @@
-https://github.com/Shizmob/pydle/tarball/master#egg=pydle
+pydle[sasl]
+click
 peewee
 pyyaml
 requests
@@ -9,12 +10,7 @@ whoosh
 pillow
 humanize
 BeautifulSoup4
-pure-sasl
 docutils
-tornado==3.2.2
-twitter
-pathlib
-https://github.com/rfk/pyenchant/tarball/master#egg=pyenchant
 textblob
 ccy
 pymediainfo

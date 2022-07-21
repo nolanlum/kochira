@@ -1,9 +1,9 @@
+import asyncio
 import logging
 from collections import deque
-import textwrap
+from inspect import isawaitable
 
 from pydle import Client as _Client
-from pydle.asynchronous import Future, coroutine
 from pydle.features.rfc1459.protocol import MESSAGE_LENGTH_LIMIT
 
 from .service import Service, HookContext
@@ -16,7 +16,7 @@ class Client(_Client):
     context_factory = HookContext
 
     def __init__(self, bot, name, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, eventloop=asyncio.get_running_loop(), **kwargs)
 
         self._reconnect_timeout = None
         self._fd = None
@@ -33,7 +33,7 @@ class Client(_Client):
 
     @classmethod
     def from_config(cls, bot, name, config):
-        client = cls(bot, name, config.nickname,
+        return cls(bot, name, config.nickname,
             username=config.username,
             realname=config.realname,
             tls_client_cert=config.tls.certificate_file,
@@ -43,47 +43,44 @@ class Client(_Client):
             sasl_username=config.sasl.username,
             sasl_password=config.sasl.password
         )
-
-        client.connect(
-            hostname=config.hostname,
-            password=config.password,
-            source_address=(config.source_address, 0),
-            port=config.port,
-            tls=config.tls.enabled,
-            tls_verify=config.tls.verify
+    
+    async def run(self):
+        await self.connect(
+            hostname=self.config.hostname,
+            password=self.config.password,
+            source_address=(self.config.source_address, 0) if self.config.source_address else None,
+            port=self.config.port,
+            tls=self.config.tls.enabled,
+            tls_verify=self.config.tls.verify
         )
 
-        return client
-
-    def connect(self, *args, reconnect=False, attempt=0, **kwargs):
+    async def connect(self, *args, reconnect=False, attempt=0, **kwargs):
         logger.info("Connecting: %s", self.name)
 
         try:
-            super().connect(*args, reconnect=reconnect,
-                            eventloop=self.bot.event_loop,
-                            **kwargs)
+            await super().connect(*args, reconnect=reconnect, **kwargs)
         except (OSError, IOError) as e:
             self._reset_attributes()
-            self.on_disconnect(False)
+            await self.on_disconnect(False)
 
-    def on_disconnect(self, expected):
-        super().on_disconnect(expected)
-        self._run_hooks("disconnect", None, None, [expected])
+    async def on_disconnect(self, expected):
+        await super().on_disconnect(expected)
+        await self._run_hooks("disconnect", None, None, [expected])
 
-    def _send_message(self, message):
-        self.bot.defer_from_thread(super()._send_message, message)
+    async def _send_message(self, message):
+        await self.bot.defer_from_thread(super()._send_message(message))
 
-    def on_ctcp_version(self, by, what, contents):
-        self.ctcp_reply(by, "VERSION", self.bot.config.core.version)
+    async def on_ctcp_version(self, by, what, contents):
+        await self.ctcp_reply(by, "VERSION", self.bot.config.core.version)
 
-    def on_connect(self):
+    async def on_connect(self):
         logger.info("Connected to IRC: %s", self.name)
-        super().on_connect()
+        await super().on_connect()
 
         for name, channel in self.bot.config.clients[self.name].channels.items():
-            self.join(name, password=channel.password)
+            await self.join(name, password=channel.password)
 
-        self._run_hooks("connect", None, None)
+        await self._run_hooks("connect", None, None)
 
     def _autotruncate(self, command, target, message, suffix="..."):
         hostmask = self._format_user_mask(self.nickname)
@@ -102,31 +99,30 @@ class Client(_Client):
     def message(self, target, message):
         message = self._autotruncate("PRIVMSG", target, message)
 
-        @self.bot.defer_from_thread
-        def _callback():
-            super(Client, self).message(target, message)
+        async def _callback():
+            await super(Client, self).message(target, message)
             self._add_to_backlog(target, self.nickname, message)
-            self._run_hooks("own_message", target, self.nickname, [target, message])
+            await self._run_hooks("own_message", target, self.nickname, [target, message])
+
+        return self.bot.defer_from_thread(_callback())
 
     def notice(self, target, message):
         message = self._autotruncate("PRIVMSG", target, message)
 
-        @self.bot.defer_from_thread
-        def _callback():
-            super(Client, self).notice(target, message)
-            self._run_hooks("own_notice", target, self.nickname, [target, message])
+        async def _callback():
+            await super(Client, self).notice(target, message)
+            await self._run_hooks("own_notice", target, self.nickname, [target, message])
+        
+        return self.bot.defer_from_thread(_callback())
 
-    def _run_hooks(self, name, target, origin, args=None, kwargs=None):
-        @coroutine
-        def _coro():
-            nonlocal args, kwargs
+    async def _run_hooks(self, name, target, origin, args=None, kwargs=None):
+        if args is None:
+            args = []
 
-            if args is None:
-                args = []
+        if kwargs is None:
+            kwargs = {}
 
-            if kwargs is None:
-                kwargs = {}
-
+        try:
             for hook in self.bot.get_hooks(name):
                 ctx = self.context_factory(hook.service, self.bot, self, target, origin)
 
@@ -136,24 +132,16 @@ class Client(_Client):
                 try:
                     r = hook(ctx, *args, **kwargs)
 
-                    if isinstance(r, Future):
-                        r = yield r
-
+                    if isawaitable(r):
+                        r = await r
+                    
                     if r is Service.EAT:
                         logging.debug("EAT suppressed further hooks.")
                         return Service.EAT
                 except BaseException:
                     logger.exception("Hook processing failed")
-
-        fut = _coro()
-        @fut.add_done_callback
-        def _callback(future):
-            if future.exception() is not None:
-                exc = future.exception()
-                logger.error("Hook runner failed",
-                             exc_info=(exc.__class__, exc, exc.__traceback__))
-
-        return fut
+        except BaseException:
+            logger.exception("Hook runner failed")
 
     def _add_to_backlog(self, target, by, message):
         backlog = self.backlogs.setdefault(target, deque([]))
@@ -162,52 +150,52 @@ class Client(_Client):
         while len(backlog) > self.bot.config.core.max_backlog:
             backlog.pop()
 
-    def on_invite(self, channel, by):
-        self._run_hooks("invite", by, by, [channel, by])
+    async def on_invite(self, channel, by):
+        await self._run_hooks("invite", by, by, [channel, by])
 
-    def on_join(self, channel, user):
-        self._run_hooks("join", channel, user, [channel, user])
+    async def on_join(self, channel, user):
+        await self._run_hooks("join", channel, user, [channel, user])
 
-    def on_kill(self, target, by, reason):
-        self._run_hooks("kill", by, by, [target, by, reason])
+    async def on_kill(self, target, by, reason):
+        await self._run_hooks("kill", by, by, [target, by, reason])
 
-    def on_kick(self, channel, target, by, reason=None):
-        self._run_hooks("kick", channel, by, [channel, target, by, reason])
+    async def on_kick(self, channel, target, by, reason=None):
+        await self._run_hooks("kick", channel, by, [channel, target, by, reason])
 
-    def on_mode_change(self, channel, modes, by):
-        self._run_hooks("mode_change", channel, by, [channel, modes, by])
+    async def on_mode_change(self, channel, modes, by):
+        await self._run_hooks("mode_change", channel, by, [channel, modes, by])
 
-    def on_user_mode_change(self, modes):
-        self._run_hooks("user_mode_change", None, self.nickname, [modes])
+    async def on_user_mode_change(self, modes):
+        await self._run_hooks("user_mode_change", None, self.nickname, [modes])
 
-    def on_channel_message(self, target, by, message):
+    async def on_channel_message(self, target, by, message):
         self._add_to_backlog(target, by, message)
-        self._run_hooks("channel_message", target, by, [target, by, message])
+        await self._run_hooks("channel_message", target, by, [target, by, message])
 
-    def on_private_message(self, by, message):
+    async def on_private_message(self, by, message):
         self._add_to_backlog(by, by, message)
-        self._run_hooks("private_message", by, by, [by, message])
+        await self._run_hooks("private_message", by, by, [by, message])
 
-    def on_nick_change(self, old, new):
-        self._run_hooks("nick_change", new, new, [old, new])
+    async def on_nick_change(self, old, new):
+        await self._run_hooks("nick_change", new, new, [old, new])
 
-    def on_channel_notice(self, target, by, message):
-        self._run_hooks("channel_notice", target, by, [target, by, message])
+    async def on_channel_notice(self, target, by, message):
+        await self._run_hooks("channel_notice", target, by, [target, by, message])
 
-    def on_private_notice(self, by, message):
-        self._run_hooks("private_notice", by, by, [by, message])
+    async def on_private_notice(self, by, message):
+        await self._run_hooks("private_notice", by, by, [by, message])
 
-    def on_part(self, channel, user, message=None):
-        self._run_hooks("part", channel, user, [channel, user, message])
+    async def on_part(self, channel, user, message=None):
+        await self._run_hooks("part", channel, user, [channel, user, message])
 
-    def on_topic_change(self, channel, message, by):
-        self._run_hooks("topic_change", channel, by, [channel, message, by])
+    async def on_topic_change(self, channel, message, by):
+        await self._run_hooks("topic_change", channel, by, [channel, message, by])
 
-    def on_quit(self, user, message=None):
-        self._run_hooks("quit", user, user, [user, message])
+    async def on_quit(self, user, message=None):
+        await self._run_hooks("quit", user, user, [user, message])
 
-    def on_ctcp(self, by, target, what, contents):
-        self._run_hooks("ctcp", by, by, [by, what, contents])
+    async def on_ctcp(self, by, target, what, contents):
+        await self._run_hooks("ctcp", by, by, [by, what, contents])
 
-    def on_ctcp_action(self, by, what, contents):
-        self._run_hooks("ctcp_action", by, by, [by, what, contents])
+    async def on_ctcp_action(self, by, what, contents):
+        await self._run_hooks("ctcp_action", by, by, [by, what, contents])

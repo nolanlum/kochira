@@ -8,7 +8,7 @@ import math
 import requests
 
 from kochira import config
-from kochira.service import Service, background, Config, coroutine
+from kochira.service import Service, background, Config
 from kochira.userdata import UserData
 
 service = Service(__name__, __doc__)
@@ -26,7 +26,8 @@ class GeocodingError(Exception):
     """
 
 
-def _geocode(key, where):
+@background
+def _geocode(_, key, where):
     resp = requests.get(
         "https://maps.googleapis.com/maps/api/geocode/json",
         params={
@@ -46,38 +47,35 @@ def _geocode(key, where):
 
 
 @service.provides("geocode")
-@coroutine
-def geocode(ctx, where):
+async def geocode(ctx, where):
     """
     Geocode an address.
     """
     location = None
 
-    user_data = yield ctx.bot.defer_from_thread(UserData.lookup_default, ctx.client, where)
+    user_data = await UserData.lookup_default(ctx.client, where)
     location = user_data.get("location")
     api_key = ctx.config_for(service).api_key
 
     if where is None and location is None:
         return []
     elif location is not None:
-        result = _geocode(api_key, "{lat},{lng}".format(**location))[0]
+        result = await _geocode(ctx, api_key, "{lat},{lng}".format(**location))[0]
         result["formatted_address"] = location["formatted_address"]
         return [result]
     else:
-        return _geocode(api_key, where)
+        return await _geocode(ctx, api_key, where)
 
 
 @service.command(r"where is (?P<where>.+)\??", mention=True)
-@background
-@coroutine
-def get_location(ctx, where):
+async def get_location(ctx, where):
     """
     Get location.
 
     Get a location using geocoding.
     """
 
-    results = yield ctx.provider_for("geocode")(where)
+    results = await ctx.provider_for("geocode")(where)
 
     if not results:
         ctx.respond(ctx._("I don't know where \"{where}\" is.").format(
@@ -97,9 +95,7 @@ def get_location(ctx, where):
 
 @service.command(r"i live (?:in|at) (?P<where>.+)", mention=True)
 @service.command(r"my location is (?P<where>.+)", mention=True)
-@background
-@coroutine
-def set_location(ctx, where):
+async def set_location(ctx, where):
     """
     Set location.
 
@@ -107,12 +103,12 @@ def set_location(ctx, where):
     """
 
     try:
-        user_data = yield ctx.bot.defer_from_thread(UserData.lookup, ctx.client, ctx.origin)
+        user_data = await UserData.lookup(ctx.client, ctx.origin)
     except UserData.DoesNotExist:
         ctx.respond(ctx._("You need to be logged into NickServ to set your location."))
         return
 
-    results = yield ctx.provider_for("geocode")(where)
+    results = await ctx.provider_for("geocode")(where)
 
     if not results:
         ctx.respond(ctx._("I don't know where \"{where}\" is.").format(
@@ -129,16 +125,13 @@ def set_location(ctx, where):
     }
 
     user_data["location"] = location
-
-    ctx.bot.defer_from_thread(user_data.save)
+    user_data.save()
     ctx.respond(ctx._("Okay, set your location to {formatted_address} ({lat:.10}, {lng:.10}).").format(**location))
 
 
 @service.command(r"find (?P<what>.+?) (?:near|in) (?:me|(?P<where>.+?))(?: \((?P<num>\d+)\))?", mention=True)
 @service.command(r"find (?P<what>.+?) within (?P<radius>\d+) ?m of (?:me|(?P<where>.+?))(?: \((?P<num>\d+)\))?", mention=True)
-@background
-@coroutine
-def nearby_search(ctx, what, where=None, radius : int=None, num : int=None):
+async def nearby_search(ctx, what, where=None, radius : int=None, num : int=None):
     """
     Nearby search.
 
@@ -151,7 +144,7 @@ def nearby_search(ctx, what, where=None, radius : int=None, num : int=None):
     if radius is None:
         radius = 1000
 
-    results = yield ctx.provider_for("geocode")(where)
+    results = await ctx.provider_for("geocode")(where)
 
     if not results:
         ctx.respond(ctx._("I don't know where \"{where}\" is.").format(
@@ -161,16 +154,19 @@ def nearby_search(ctx, what, where=None, radius : int=None, num : int=None):
 
     location = results[0]["geometry"]["location"]
 
-    resp = requests.get(
-        "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
-        params={
-            "key": ctx.config.api_key,
-            "radius": radius,
-            "sensor": "false",
-            "location": "{lat:.10},{lng:.10}".format(**location),
-            "keyword": what
-        }
-    ).json()
+    @background
+    def _get_nearby(ctx):
+        return requests.get(
+            "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
+            params={
+                "key": ctx.config.api_key,
+                "radius": radius,
+                "sensor": "false",
+                "location": "{lat:.10},{lng:.10}".format(**location),
+                "keyword": what
+            }
+        ).json()
+    resp = await _get_nearby(ctx)
 
     if resp["status"] == "ZERO_RESULTS":
         ctx.respond(ctx._("Couldn't find anything."))
@@ -214,9 +210,7 @@ EARTH_RADIUS = 6367.5
 
 @service.command(r"distance to (?P<end_loc>.+?) from (?P<start_loc>.+?)", mention=True, priority=1)
 @service.command(r"distance(?: from (?P<start_loc>.+?))? to (?P<end_loc>.+?)", mention=True)
-@background
-@coroutine
-def distance(ctx, end_loc, start_loc=None):
+async def distance(ctx, end_loc, start_loc=None):
     """
     Distance.
 
@@ -226,7 +220,7 @@ def distance(ctx, end_loc, start_loc=None):
     if start_loc is None:
         start_loc = ctx.origin
 
-    start_results = yield ctx.provider_for("geocode")(start_loc)
+    start_results = await ctx.provider_for("geocode")(start_loc)
 
     if not start_results:
         ctx.respond(ctx._("I don't know where \"{where}\" is.").format(
@@ -239,7 +233,7 @@ def distance(ctx, end_loc, start_loc=None):
     rlat1, rlng1 = \
         math.radians(start_coords["lat"]), math.radians(start_coords["lng"])
 
-    end_results = yield ctx.provider_for("geocode")(end_loc)
+    end_results = await ctx.provider_for("geocode")(end_loc)
 
     if not end_results:
         ctx.respond(ctx._("I don't know where \"{where}\" is.").format(
