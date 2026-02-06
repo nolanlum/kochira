@@ -15,7 +15,7 @@ import os
 import subprocess
 
 from tornado.web import RequestHandler, Application, UIModule, HTTPError
-from tornado.httpserver import HTTPServer, HTTPRequest
+from tornado.httpserver import HTTPServer
 
 from urllib.parse import urlparse
 
@@ -173,8 +173,7 @@ def setup_webserver(ctx):
 
     @ctx.bot.event_loop.schedule
     def _callback():
-        ctx.storage.http_server = HTTPServer(ctx.storage.application,
-                                             io_loop=ctx.bot.event_loop.io_loop)
+        ctx.storage.http_server = HTTPServer(ctx.storage.application)
         ctx.storage.http_server.listen(ctx.config.port, ctx.config.address)
         service.logger.info("web server ready")
 
