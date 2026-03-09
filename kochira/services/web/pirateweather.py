@@ -7,7 +7,7 @@ Get weather data from Pirate Weather.
 import requests
 
 from kochira import config
-from kochira.service import Service, background, Config, coroutine
+from kochira.service import Service, background, Config
 from kochira.userdata import UserData
 
 
@@ -22,8 +22,7 @@ class Config(Config):
 @service.command(r"!weather(?: (?P<unit>[cf])(?:elsius|ahrenheit)?)?(?: (?P<where>.+))?")
 @service.command(r"weather(?: (?:for|in) (?P<where>.+))?(?: in (?P<unit>[cf])(?:elsius|ahrenheit)?)?", mention=True)
 @background
-@coroutine
-def weather(ctx, where=None, unit=None):
+async def weather(ctx, where=None, unit=None):
     """
     Weather.
 
@@ -39,7 +38,7 @@ def weather(ctx, where=None, unit=None):
         ctx.respond(ctx._("Sorry, I don't have a geocode provider loaded."))
         return
 
-    results = yield geocode(where)
+    results = await geocode(where)
 
     if not results:
         ctx.respond(ctx._("I don't know where \"{where}\" is.").format(
@@ -50,7 +49,7 @@ def weather(ctx, where=None, unit=None):
     def address_component(component_type):
         filtered_components = [x for x in results[0]['address_components'] if component_type in x['types']]
         return filtered_components[0] if filtered_components else None
-    
+
     country = address_component('country')
 
     is_us = country['short_name'] == "US"

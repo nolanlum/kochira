@@ -7,7 +7,7 @@ Get weather data from Weather Underground.
 import requests
 
 from kochira import config
-from kochira.service import Service, background, Config, coroutine
+from kochira.service import Service, background, Config
 from kochira.userdata import UserData
 
 service = Service(__name__, __doc__)
@@ -21,8 +21,7 @@ class Config(Config):
 @service.command(r"!weather(?: (?P<where>.+))?")
 @service.command(r"weather(?: (?:for|in) (?P<where>.+))?", mention=True)
 @background
-@coroutine
-def weather(ctx, where=None):
+async def weather(ctx, where=None):
     """
     Weather.
 
@@ -38,7 +37,7 @@ def weather(ctx, where=None):
         ctx.respond(ctx._("Sorry, I don't have a geocode provider loaded."))
         return
 
-    results = yield geocode(where)
+    results = await geocode(where)
 
     if not results:
         ctx.respond(ctx._("I don't know where \"{where}\" is.").format(
@@ -102,8 +101,7 @@ def weather(ctx, where=None):
 @service.command(r"!forecast(?: (?P<where>.+?))?(?: (?P<num>\d+))?")
 @service.command(r"forecast(?: (?:for|in) (?P<where>.+?))?(?: \((?P<num>\d+)\))?\??", mention=True)
 @background
-@coroutine
-def forecast(ctx, where=None, num: int=0):
+async def forecast(ctx, where=None, num: int=0):
     """
     Forecast.
 
@@ -119,7 +117,7 @@ def forecast(ctx, where=None, num: int=0):
         ctx.respond(ctx._("Sorry, I don't have a geocode provider loaded."))
         return
 
-    results = yield geocode(where)
+    results = await geocode(where)
 
     if not results:
         ctx.respond(ctx._("I don't know where \"{where}\" is.").format(

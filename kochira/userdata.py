@@ -4,8 +4,6 @@ import peewee
 import collections
 from .db import Model, database
 
-from pydle.asynchronous import coroutine
-
 
 class JSONField(peewee.TextField):
     def db_value(self, value):
@@ -100,10 +98,9 @@ class UserData(collections.abc.MutableMapping):
     class DoesNotExist(Exception): pass
 
     @classmethod
-    @coroutine
-    def lookup(cls, client, nickname):
+    async def lookup(cls, client, nickname):
         if client.config.authenticated_userdata:
-            whois = yield client.whois(nickname)
+            whois = await client.whois(nickname)
 
             if whois is None:
                 raise cls.DoesNotExist
@@ -124,10 +121,9 @@ class UserData(collections.abc.MutableMapping):
         return cls(client.bot, client.network, client.normalize(account))
 
     @classmethod
-    @coroutine
-    def lookup_default(cls, client, nickname):
+    async def lookup_default(cls, client, nickname):
         try:
-            r = yield cls.lookup(client, nickname)
+            r = await cls.lookup(client, nickname)
         except cls.DoesNotExist:
             return cls(client.bot, client.network, client.normalize(nickname))
         else:

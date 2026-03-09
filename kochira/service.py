@@ -1,3 +1,5 @@
+import asyncio
+import inspect
 import functools
 import re
 import logging
@@ -5,8 +7,6 @@ import locale
 import bisect
 import gettext
 import os
-
-from pydle.asynchronous import coroutine, Future
 
 from .auth import has_permission, requires_permission
 from .userdata import UserData
@@ -64,9 +64,8 @@ class HookContext:
         self.client.message(self.target, message)
 
     def respond(self, message):
-        @coroutine
-        def _coro():
-            if (yield self.client._run_hooks(
+        async def _coro():
+            if (await self.client._run_hooks(
                 "respond", self.target, self.origin,
                 [self.target, self.origin, message])) is not Service.EAT:
                 self.message(self.client.config.response_format.format(
@@ -74,7 +73,7 @@ class HookContext:
                     message=message
                 ))
 
-        return _coro()
+        return asyncio.ensure_future(_coro())
 
     def add_context(self, context):
         self.service.add_context(self.client, context, self.target)
@@ -113,10 +112,10 @@ class HookContext:
         except IOError:
             self.t = gettext.NullTranslations()
 
-    def lookup_user_data(self, who=None):
+    async def lookup_user_data(self, who=None):
         if who is None:
             who = self.origin
-        return UserData.lookup(self.client, who)
+        return await UserData.lookup(self.client, who)
 
     def gettext(self, string):
         return self.t.gettext(string)
@@ -178,8 +177,7 @@ class Service:
             f.patterns.add((pattern, mention))
 
             @functools.wraps(f)
-            @coroutine
-            def _command_handler(ctx, target, origin, message):
+            async def _command_handler(ctx, target, origin, message):
                 contexts = getattr(f, "contexts", set([]))
                 if contexts:
                     # check for contexts
@@ -233,8 +231,8 @@ class Service:
 
                 r = f(ctx, **kwargs)
 
-                if isinstance(r, Future):
-                    r = yield r
+                if inspect.isawaitable(r):
+                    r = await r
 
                 if r is not None:
                     return r
@@ -350,27 +348,17 @@ class Service:
 def background(f):
     """
     Defer a command to run in the background.
+    Wraps both sync and async functions as an async handler.
     """
 
     f.background = True
 
     @functools.wraps(f)
-    @coroutine
-    def _inner(ctx, *args, **kwargs):
-        result = yield ctx.bot.executor.submit(f, ctx, *args, **kwargs)
-
-        @coroutine
-        def _cont():
-            nonlocal result
-
-            if isinstance(result, Future):
-                result = yield result
-            return result
-
-        # If we yielded the future from another thread (i.e. an executor
-        # thread), we do this song and dance to force it back into the main
-        # thread.
-        return (yield ctx.bot.defer_from_thread(_cont))
+    async def _inner(ctx, *args, **kwargs):
+        r = f(ctx, *args, **kwargs)
+        if inspect.isawaitable(r):
+            r = await r
+        return r
 
     return _inner
 

@@ -7,7 +7,7 @@ Allow the outputs of commands to be piped into each other.
 import types
 import re
 from kochira.client import Client
-from kochira.service import Service, coroutine, HookContext
+from kochira.service import Service, HookContext
 
 service = Service(__name__, __doc__)
 
@@ -63,8 +63,7 @@ def split_unescape(s, delim, escape='\\', unescape=True):
 
 
 @service.command(r"!pipe (?P<commands>.+)")
-@coroutine
-def run_pipe(ctx, commands):
+async def run_pipe(ctx, commands):
     """
     Run a pipe.
 
@@ -88,7 +87,7 @@ def run_pipe(ctx, commands):
         else:
             message += " " + acc
 
-        yield c._run_hooks("channel_message", ctx.target, ctx.origin,
+        await c._run_hooks("channel_message", ctx.target, ctx.origin,
                            [ctx.target, ctx.origin, message])
         acc = "\n".join(c.buffer)
 

@@ -113,6 +113,7 @@ class FooterModule(UIModule):
         revision, _ = p.communicate()
 
         dirty = False
+        remote = None
 
         if p.returncode != 0:
             revision = None
@@ -171,11 +172,12 @@ def setup_webserver(ctx):
     ctx.storage.application._ctx = HookContext(service, ctx.bot)
     ctx.storage.application.name = None
 
-    @ctx.bot.event_loop.schedule
     def _callback():
         ctx.storage.http_server = HTTPServer(ctx.storage.application)
         ctx.storage.http_server.listen(ctx.config.port, ctx.config.address)
         service.logger.info("web server ready")
+
+    ctx.bot.event_loop.call_soon_threadsafe(_callback)
 
 
 @service.shutdown
@@ -184,7 +186,8 @@ def shutdown_webserver(ctx):
     # scheduler tick
     storage = ctx.storage
 
-    @ctx.bot.event_loop.schedule
     def _callback():
         storage.http_server.stop()
         service.logger.info("web server stopped")
+
+    ctx.bot.event_loop.call_soon_threadsafe(_callback)

@@ -13,7 +13,7 @@ from lxml import etree
 
 from kochira import config
 from kochira.userdata import UserData
-from kochira.service import Service, background, Config, coroutine
+from kochira.service import Service, background, Config
 
 service = Service(__name__, __doc__)
 
@@ -143,16 +143,14 @@ def get_user_now_playing(api_key, user):
     return None
 
 
-@coroutine
-def get_lfm_username(client, who):
-    user_data = yield UserData.lookup_default(client, who)
+async def get_lfm_username(client, who):
+    user_data = await UserData.lookup_default(client, who)
     return user_data.get("lastfm_user", who)
 
 
 @service.command(r"!lfm (?P<lfm_username>\S+)$")
 @service.command(r"my last\.fm username is (?P<lfm_username>\S+)$", mention=True)
-@coroutine
-def setup_user(ctx, lfm_username):
+async def setup_user(ctx, lfm_username):
     """
     Set username.
 
@@ -160,7 +158,7 @@ def setup_user(ctx, lfm_username):
     """
 
     try:
-        user_data = yield UserData.lookup(ctx.client, ctx.origin)
+        user_data = await UserData.lookup(ctx.client, ctx.origin)
     except UserData.DoesNotExist:
         ctx.respond(ctx._("You must be logged in to set your Last.fm username."))
         return
@@ -173,8 +171,7 @@ def setup_user(ctx, lfm_username):
 
 @service.command(r"!lfm$")
 @service.command(r"what is my last\.fm username\??$", mention=True)
-@coroutine
-def check_user(ctx):
+async def check_user(ctx):
     """
     Now playing.
 
@@ -182,7 +179,7 @@ def check_user(ctx):
     """
 
     try:
-        user_data = yield UserData.lookup(ctx.client, ctx.origin)
+        user_data = await UserData.lookup(ctx.client, ctx.origin)
     except UserData.DoesNotExist:
         ctx.respond(ctx._("You must be logged in to set your Last.fm username."))
         return
@@ -199,8 +196,7 @@ def check_user(ctx):
 @service.command(r"compare my last\.fm with (?P<user2>\S+)$", mention=True)
 @service.command(r"compare (?P<user1>\S+) and (?P<user2>\S+) on last\.fms$", mention=True)
 @background
-@coroutine
-def compare_users(ctx, user2, user1=None):
+async def compare_users(ctx, user2, user1=None):
     """
     Tasteometer.
 
@@ -209,8 +205,8 @@ def compare_users(ctx, user2, user1=None):
     if user1 is None:
         user1 = ctx.origin
 
-    lfm1 = yield ctx.bot.defer_from_thread(get_lfm_username, ctx.client, user1)
-    lfm2 = yield ctx.bot.defer_from_thread(get_lfm_username, ctx.client, user2)
+    lfm1 = await get_lfm_username(ctx.client, user1)
+    lfm2 = await get_lfm_username(ctx.client, user2)
 
     comparison = get_compare_users(ctx.config.api_key, lfm1, lfm2)
 
@@ -233,8 +229,7 @@ def compare_users(ctx, user2, user1=None):
 @service.command(r"what am i playing\??$", mention=True)
 @service.command(r"what is (?P<who>\S+) playing\??$", mention=True)
 @background
-@coroutine
-def now_playing(ctx, who=None):
+async def now_playing(ctx, who=None):
     """
     Get username.
 
@@ -243,7 +238,7 @@ def now_playing(ctx, who=None):
     if who is None:
         who = ctx.origin
 
-    lfm = yield get_lfm_username(ctx.client, who)
+    lfm = await get_lfm_username(ctx.client, who)
     track = get_user_now_playing(ctx.config.api_key, lfm)
 
     if track is None:

@@ -9,7 +9,7 @@ import requests
 from lxml import etree
 
 from kochira import config
-from kochira.service import Service, background, Config, coroutine
+from kochira.service import Service, background, Config
 from kochira.userdata import UserData
 
 service = Service(__name__, __doc__)
@@ -22,8 +22,7 @@ class Config(Config):
 @service.command(r"!wa (?P<query>.+)$")
 @service.command(r"(?:compute|calculate|mathify) (?:for (?P<who>\S+))?(?P<query>.+)$", mention=True)
 @background
-@coroutine
-def compute(ctx, query, who=None):
+async def compute(ctx, query, who=None):
     """
     Compute.
 
@@ -31,14 +30,14 @@ def compute(ctx, query, who=None):
     """
 
     if who is not None:
-        user_data = yield ctx.bot.defer_from_thread(UserData.lookup_default, ctx.client, who)
+        user_data = await UserData.lookup_default(ctx.client, who)
 
         if "location" not in user_data:
             ctx.respond(ctx._("I don't have location information for {who}.").format(who=who))
             return
     else:
         try:
-            user_data = yield ctx.bot.defer_from_thread(UserData.lookup, ctx.client, ctx.origin)
+            user_data = await UserData.lookup(ctx.client, ctx.origin)
         except UserData.DoesNotExist:
             user_data = {}
 

@@ -1,18 +1,17 @@
-from concurrent.futures import ThreadPoolExecutor, Future
-
+import asyncio
 import collections
 import functools
-import imp
+import heapq
 import importlib
 import locale
-import heapq
 import logging
 import multiprocessing
-from peewee import SqliteDatabase
 import signal
-import yaml
+from concurrent.futures import ThreadPoolExecutor
 
-from pydle.asynchronous import EventLoop, coroutine
+import yaml
+from peewee import SqliteDatabase
+
 
 from . import config
 from .client import Client
@@ -135,7 +134,8 @@ class Bot:
     def __init__(self, config_file="config.yml"):
         self.services = {}
         self.clients = {}
-        self.event_loop = EventLoop()
+        self.event_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.event_loop)
 
         self.config_class = _config_class_factory(self)
         self.config_file = config_file
@@ -149,7 +149,10 @@ class Bot:
         self.executor = ThreadPoolExecutor(self.config.core.max_workers or multiprocessing.cpu_count())
         self.scheduler = Scheduler(self)
 
-        signal.signal(signal.SIGHUP, self._handle_sighup)
+        try:
+            signal.signal(signal.SIGHUP, self._handle_sighup)
+        except AttributeError:
+            pass  # Some platforms don't have SIGHUP
 
         self._load_services()
         self._connect_to_irc()
@@ -157,13 +160,13 @@ class Bot:
         signal.signal(signal.SIGTERM, self._handle_sigterm)
         signal.signal(signal.SIGINT, self._handle_sigterm)
 
-        self.event_loop.run()
+        self.event_loop.run_forever()
 
     def stop(self):
         self.stopping = True
-        self.event_loop.stop()
         for service in list(self.services.keys()):
             self.unload_service(service)
+        self.event_loop.stop()
 
     def connect(self, name):
         client = Client.from_config(self, name,
@@ -174,9 +177,8 @@ class Bot:
     def disconnect(self, name):
         client = self.clients[name]
 
-        # schedule this for the next iteration of the ioloop so we can handle
-        # pending messages
-        self.event_loop.schedule(client.quit)
+        # Schedule quit for the next event loop iteration.
+        asyncio.run_coroutine_threadsafe(client.quit(), self.event_loop)
 
         del self.clients[name]
 
@@ -197,30 +199,7 @@ class Bot:
                 try:
                     self.load_service(service)
                 except:
-                    pass # it gets logged
-
-    def defer_from_thread(self, fn, *args, **kwargs):
-        fut = Future()
-
-        @coroutine
-        def _callback():
-            try:
-                r = fn(*args, **kwargs)
-            except Exception as e:
-                fut.set_exception(e)
-            else:
-                if isinstance(r, Future):
-                    try:
-                        r = yield r
-                    except Exception as e:
-                        fut.set_exception(e)
-                    else:
-                        fut.set_result(r)
-                else:
-                    fut.set_result(r)
-
-        self.event_loop.schedule(_callback)
-        return fut
+                    pass  # it gets logged
 
     def load_service(self, name, reload=False):
         """
@@ -246,7 +225,7 @@ class Bot:
             module = importlib.import_module(name)
 
             if reload:
-                module = imp.reload(module)
+                module = importlib.reload(module)
 
             if not hasattr(module, "service"):
                 raise RuntimeError("{} is not a valid service".format(name))

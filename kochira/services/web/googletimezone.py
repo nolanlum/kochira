@@ -9,7 +9,7 @@ import time
 from datetime import datetime
 
 from kochira import config
-from kochira.service import Service, background, Config, coroutine
+from kochira.service import Service, background, Config
 from kochira.userdata import UserData
 
 service = Service(__name__, __doc__)
@@ -24,8 +24,7 @@ class Config(Config):
 @service.command(r"time(?: (?:for|in) (?P<where>.+))?", mention=True)
 @service.command(r"when is (?P<where>.+)\??", mention=True)
 @background
-@coroutine
-def timezone(ctx, where=None):
+async def timezone(ctx, where=None):
     """
     Time.
 
@@ -41,7 +40,7 @@ def timezone(ctx, where=None):
         ctx.respond(ctx._("Sorry, I don't have a geocode provider loaded."))
         return
 
-    results = yield geocode(where)
+    results = await geocode(where)
 
     if not results:
         ctx.respond(ctx._("I don't know where \"{where}\" is.").format(

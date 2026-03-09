@@ -7,7 +7,7 @@ Get weather data from Accuweather.
 import requests
 
 from kochira import config
-from kochira.service import Service, background, Config, coroutine
+from kochira.service import Service, background, Config
 from kochira.userdata import UserData
 
 
@@ -22,8 +22,7 @@ class Config(Config):
 @service.command(r"!weather(?: (?P<unit>[cf])(?:elsius|ahrenheit)?)?(?: (?P<where>.+))?")
 @service.command(r"weather(?: (?:for|in) (?P<where>.+))?(?: in (?P<unit>[cf])(?:elsius|ahrenheit)?)?", mention=True)
 @background
-@coroutine
-def weather(ctx, where=None, unit=None):
+async def weather(ctx, where=None, unit=None):
     """
     Weather.
 
@@ -39,7 +38,7 @@ def weather(ctx, where=None, unit=None):
         ctx.respond(ctx._("Sorry, I don't have a geocode provider loaded."))
         return
 
-    results = yield geocode(where)
+    results = await geocode(where)
 
     if not results:
         ctx.respond(ctx._("I don't know where \"{where}\" is.").format(
@@ -117,5 +116,3 @@ def weather(ctx, where=None, unit=None):
         precip=precip,
         mmin=_unitize("mm", "in")
     ))
-
-

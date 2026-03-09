@@ -7,7 +7,7 @@ Enables users to grant each other karma.
 from datetime import datetime, timedelta
 
 from kochira import config
-from kochira.service import Service, Config, coroutine
+from kochira.service import Service, Config
 from kochira.userdata import UserData
 
 service = Service(__name__, __doc__)
@@ -24,8 +24,7 @@ def initialize(ctx):
 
 
 @service.command(r"(?P<who>\S+)\+\+")
-@coroutine
-def add_karma(ctx, who):
+async def add_karma(ctx, who):
     """
     Add karma.
 
@@ -46,7 +45,7 @@ def add_karma(ctx, who):
         return
 
     try:
-        user_data = yield UserData.lookup(ctx.client, who)
+        user_data = await UserData.lookup(ctx.client, who)
     except UserData.DoesNotExist:
         ctx.respond(ctx._("{who}'s account is not registered.").format(
             who=who
@@ -67,15 +66,14 @@ def add_karma(ctx, who):
 
 @service.command(r"!karma (?P<who>\S+)")
 @service.command(r"karma for (?P<who>\S+)", mention=True)
-@coroutine
-def get_karma(ctx, who):
+async def get_karma(ctx, who):
     """
     Get karma.
 
     Get the amount of karma for a user.
     """
 
-    user_data = yield UserData.lookup_default(ctx.client, who)
+    user_data = await UserData.lookup_default(ctx.client, who)
     karma = user_data.get("karma", 0)
 
     ctx.respond(ctx._("{who} has {n} karma.").format(

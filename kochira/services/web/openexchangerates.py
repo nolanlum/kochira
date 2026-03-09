@@ -9,7 +9,7 @@ import ccy
 import time
 
 from kochira import config
-from kochira.service import Service, background, Config, coroutine
+from kochira.service import Service, background, Config
 from kochira.userdata import UserData
 
 service = Service(__name__, __doc__)
@@ -59,8 +59,7 @@ def _update_currencies(app_id, storage):
 @service.command(r"!convert (?P<amount>\d+(?:\.\d*)?)?(?: ?(?P<from_currency>\S+))?(?: (?P<to_currency>\S+))?")
 @service.command(r"convert (?P<amount>\d+(?:\.\d*)?)?(?: ?(?P<from_currency>\S+))?(?: to (?P<to_currency>\S+))?", mention=True)
 @background
-@coroutine
-def convert(ctx, amount: float=1, from_currency=None, to_currency=None):
+async def convert(ctx, amount: float=1, from_currency=None, to_currency=None):
     """
     Convert.
 
@@ -82,13 +81,13 @@ def convert(ctx, amount: float=1, from_currency=None, to_currency=None):
             ctx.respond(ctx._("Sorry, I don't have a geocode provider loaded, and you haven't specified both currencies."))
             return
 
-        user_data = yield ctx.bot.defer_from_thread(UserData.lookup_default, ctx.client, ctx.origin)
+        user_data = await UserData.lookup_default(ctx.client, ctx.origin)
 
         if "location" not in user_data:
             ctx.respond(ctx._("You don't have location data set, so I can't guess what currency you want."))
             return
 
-        result = (yield geocode(ctx.origin))[0]
+        result = (await geocode(ctx.origin))[0]
 
         currency = ccy.countryccy(
             [component["short_name"] for component in result["address_components"]
@@ -128,4 +127,3 @@ def convert(ctx, amount: float=1, from_currency=None, to_currency=None):
         to_currency=to_currency,
         to_currency_name=ctx.storage.names[to_currency]
     ))
-
