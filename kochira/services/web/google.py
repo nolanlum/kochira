@@ -4,11 +4,8 @@ Google web search.
 Run queries on Google and return results.
 """
 
-import requests
-
 from kochira import config
-from kochira.service import Service, background, Config
-from kochira.userdata import UserData
+from kochira.service import Service, Config
 
 service = Service(__name__, __doc__)
 
@@ -21,32 +18,31 @@ class Config(Config):
 
 @service.command(r"!g (?P<term>.+?)$")
 @service.command(r"(?:search for|google) (?P<term>.+?)\??$", mention=True)
-@background
-def search(ctx, term):
+async def search(ctx, term):
     """
     Google.
 
     Search for the given terms on Google.
     """
 
-    r = requests.get(
+    r = (await ctx.bot.http.get(
         "https://www.googleapis.com/customsearch/v1",
         params={
             "key": ctx.config.api_key,
             "cx": ctx.config.cx,
             "q": term
         }
-    ).json()
+    )).json()
 
     results = r.get("items", [])
 
     if not results:
-        ctx.respond(ctx._("Couldn't find anything matching \"{term}\".").format(term=term))
+        await ctx.respond(ctx._("Couldn't find anything matching \"{term}\".").format(term=term))
         return
 
     total = len(results)
 
-    ctx.respond(ctx._("({num} of {total}) {title}: {url}").format(
+    await ctx.respond(ctx._("({num} of {total}) {title}: {url}").format(
         title=results[0]["title"],
         url=results[0]["link"],
         num=1,
@@ -55,15 +51,14 @@ def search(ctx, term):
 
 @service.command(r"!image (?P<term>.+?)$")
 @service.command(r"image(?: for)? (?P<term>.+?)\??$", mention=True)
-@background
-def image(ctx, term):
+async def image(ctx, term):
     """
     Image search.
 
     Search for the given terms on Google.
     """
 
-    r = requests.get(
+    r = (await ctx.bot.http.get(
         "https://www.googleapis.com/customsearch/v1",
         params={
             "key": ctx.config.api_key,
@@ -71,7 +66,7 @@ def image(ctx, term):
             "searchType": "image",
             "q": term
         }
-    ).json()
+    )).json()
 
     results = [
         item
@@ -80,12 +75,12 @@ def image(ctx, term):
     ]
 
     if not results:
-        ctx.respond(ctx._("Couldn't find anything matching \"{term}\".").format(term=term))
+        await ctx.respond(ctx._("Couldn't find anything matching \"{term}\".").format(term=term))
         return
 
     total = len(results)
 
-    ctx.respond(ctx._("({num} of {total}) {url}").format(
+    await ctx.respond(ctx._("({num} of {total}) {url}").format(
         url=results[0]["link"],
         num=1,
         total=total

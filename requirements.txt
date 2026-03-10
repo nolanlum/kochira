@@ -1,7 +1,7 @@
 pydle>=1.1.0
 peewee
 pyyaml
-requests
+httpx
 lxml
 parsedatetime
 pycountry

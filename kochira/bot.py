@@ -3,12 +3,14 @@ import collections
 import functools
 import heapq
 import importlib
+import inspect
 import locale
 import logging
 import multiprocessing
 import signal
 from concurrent.futures import ThreadPoolExecutor
 
+import httpx
 import yaml
 from peewee import SqliteDatabase
 
@@ -135,7 +137,6 @@ class Bot:
         self.services = {}
         self.clients = {}
         self.event_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.event_loop)
 
         self.config_class = _config_class_factory(self)
         self.config_file = config_file
@@ -148,6 +149,10 @@ class Bot:
     def run(self):
         self.executor = ThreadPoolExecutor(self.config.core.max_workers or multiprocessing.cpu_count())
         self.scheduler = Scheduler(self)
+        self.http = httpx.AsyncClient()
+
+        self.event_loop.set_default_executor(self.executor)
+        asyncio.set_event_loop(self.event_loop)
 
         try:
             signal.signal(signal.SIGHUP, self._handle_sighup)
@@ -160,7 +165,10 @@ class Bot:
         signal.signal(signal.SIGTERM, self._handle_sigterm)
         signal.signal(signal.SIGINT, self._handle_sigterm)
 
-        self.event_loop.run_forever()
+        try:
+            self.event_loop.run_forever()
+        finally:
+            self.event_loop.run_until_complete(self.http.aclose())
 
     def stop(self):
         self.stopping = True
@@ -200,6 +208,20 @@ class Bot:
                     self.load_service(service)
                 except:
                     pass  # it gets logged
+
+    def defer_from_thread(self, awaitable):
+        """
+        Run the given awaitable, possibly from another thread.
+        If running from an async-def (on the event loop), returns an awaitable asyncio.Future.
+        Otherwise, blocks until the event loop runs and returns the result.
+        """
+        try:
+            # we need this hack since some IRC I/O can be called from both async and non-async contexts.
+            # also, i don't know how to write python anymore.
+            # this will throw if not on the event loop, but does assume that there is only one event loop.
+            return asyncio.ensure_future(awaitable, loop=asyncio.get_running_loop())
+        except RuntimeError:
+            return asyncio.run_coroutine_threadsafe(awaitable, loop=self.event_loop).result()
 
     def load_service(self, name, reload=False):
         """

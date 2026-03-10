@@ -96,44 +96,43 @@ class Client(_Client):
     async def message(self, target, message):
         message = self._autotruncate("PRIVMSG", target, message)
 
-        async def _callback():
-            await super(Client, self).message(target, message)
-            self._add_to_backlog(target, self.nickname, message)
-            await self._run_hooks("own_message", target, self.nickname, [target, message])
-        return asyncio.run_coroutine_threadsafe(_callback(), self.bot.event_loop)
+        await super(Client, self).message(target, message)
+        self._add_to_backlog(target, self.nickname, message)
+        await self._run_hooks("own_message", target, self.nickname, [target, message])
 
     async def notice(self, target, message):
         message = self._autotruncate("NOTICE", target, message)
 
-        async def _callback():
-            await super(Client, self).notice(target, message)
-            await self._run_hooks("own_notice", target, self.nickname, [target, message])
-        return asyncio.run_coroutine_threadsafe(_callback(), self.bot.event_loop)
+        await super(Client, self).notice(target, message)
+        await self._run_hooks("own_notice", target, self.nickname, [target, message])
 
     async def _run_hooks(self, name, target, origin, args=None, kwargs=None):
-        if args is None:
-            args = []
+        try:
+            if args is None:
+                args = []
 
-        if kwargs is None:
-            kwargs = {}
+            if kwargs is None:
+                kwargs = {}
 
-        for hook in self.bot.get_hooks(name):
-            ctx = self.context_factory(hook.service, self.bot, self, target, origin)
+            for hook in self.bot.get_hooks(name):
+                ctx = self.context_factory(hook.service, self.bot, self, target, origin)
 
-            if not ctx.config.enabled:
-                continue
+                if not ctx.config.enabled:
+                    continue
 
-            try:
-                r = hook(ctx, *args, **kwargs)
+                try:
+                    r = hook(ctx, *args, **kwargs)
 
-                if inspect.isawaitable(r):
-                    r = await r
+                    if inspect.isawaitable(r):
+                        r = await r
 
-                if r is Service.EAT:
-                    logging.debug("EAT suppressed further hooks.")
-                    return Service.EAT
-            except BaseException:
-                logger.exception("Hook processing failed")
+                    if r is Service.EAT:
+                        logging.debug("EAT suppressed further hooks.")
+                        return Service.EAT
+                except BaseException:
+                    logger.exception("Hook processing failed")
+        except BaseException:
+            logger.exception("Hook runner failed")
 
     def _add_to_backlog(self, target, by, message):
         backlog = self.backlogs.setdefault(target, deque([]))

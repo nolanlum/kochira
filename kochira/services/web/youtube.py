@@ -4,11 +4,8 @@ YouTube search.
 Run queries on YouTube and return results.
 """
 
-import requests
-
 from kochira import config
-from kochira.service import Service, background, Config
-from kochira.userdata import UserData
+from kochira.service import Service, Config
 
 service = Service(__name__, __doc__)
 
@@ -20,8 +17,7 @@ class Config(Config):
 
 @service.command(r"!yt (?P<term>.+?)(?: (?P<num>\d+))?$")
 @service.command(r"youtube search(?: for)? (?P<term>.+?)(?: \((?P<num>\d+)\))?\??$", mention=True)
-@background
-def search(ctx, term, num: int=None):
+async def search(ctx, term, num: int=None):
     """
     YouTube search.
 
@@ -29,7 +25,7 @@ def search(ctx, term, num: int=None):
     that result.
     """
 
-    r = requests.get(
+    r = (await ctx.bot.http.get(
         "https://www.googleapis.com/youtube/v3/search",
         params={
             "key": ctx.config.api_key,
@@ -37,7 +33,7 @@ def search(ctx, term, num: int=None):
             "type": "video",
             "q": term
         }
-    ).json()
+    )).json()
 
     results = r.get("items", [])
 
@@ -55,14 +51,14 @@ def search(ctx, term, num: int=None):
         ctx.respond("Couldn't find anything matching \"{term}\".".format(term=term))
         return
 
-    r = requests.get(
+    r = (await ctx.bot.http.get(
         "https://www.googleapis.com/youtube/v3/videos",
         params={
             "key": ctx.config.api_key,
             "part": "statistics",
             "id": results[num]["id"]["videoId"]
         }
-    ).json()
+    )).json()
 
     statistics, = r["items"]
     statistics = statistics["statistics"]
@@ -77,14 +73,14 @@ def search(ctx, term, num: int=None):
     ))
 
 @service.command(r".*(?:youtube\.com/watch.*v=|youtu\.be/)(?P<video_id>[a-zA-Z0-9_-]+).*", priority=-10)
-def lookup(ctx, video_id):
+async def lookup(ctx, video_id):
     """
     YouTube video lookup.
 
     Look up stats for pasted YouTube video URLs.
     """
 
-    r = requests.get(
+    r = (await ctx.bot.http.get(
         "https://www.googleapis.com/youtube/v3/videos",
         params={
             "key": ctx.config.api_key,
@@ -92,7 +88,7 @@ def lookup(ctx, video_id):
             "fields": "items",
             "id": video_id
         }
-    ).json()
+    )).json()
 
     if not r["items"]:
         return
@@ -105,4 +101,3 @@ def lookup(ctx, video_id):
         likes=r["statistics"].get('likeCount', '0'),
         views=r["statistics"]["viewCount"],
     ))
-

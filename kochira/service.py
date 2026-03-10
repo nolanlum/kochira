@@ -1,12 +1,11 @@
-import asyncio
-import inspect
+import bisect
+import concurrent.futures
 import functools
-import re
+import gettext
+import inspect
 import logging
 import locale
-import bisect
-import gettext
-import os
+import re
 
 from .auth import has_permission, requires_permission
 from .userdata import UserData
@@ -61,19 +60,18 @@ class HookContext:
         return self.service.binding_for(self.bot).storage
 
     def message(self, message):
-        self.client.message(self.target, message)
+        return self.bot.defer_from_thread(self.client.message(self.target, message))
 
     def respond(self, message):
         async def _coro():
             if (await self.client._run_hooks(
                 "respond", self.target, self.origin,
                 [self.target, self.origin, message])) is not Service.EAT:
-                self.message(self.client.config.response_format.format(
+                await self.client.message(self.target, self.client.config.response_format.format(
                     origin=self.origin,
                     message=message
                 ))
-
-        return asyncio.ensure_future(_coro())
+        return self.bot.defer_from_thread(_coro())
 
     def add_context(self, context):
         self.service.add_context(self.client, context, self.target)
@@ -177,7 +175,7 @@ class Service:
             f.patterns.add((pattern, mention))
 
             @functools.wraps(f)
-            async def _command_handler(ctx, target, origin, message):
+            def _command_handler(ctx, target, origin, message):
                 contexts = getattr(f, "contexts", set([]))
                 if contexts:
                     # check for contexts
@@ -231,8 +229,8 @@ class Service:
 
                 r = f(ctx, **kwargs)
 
-                if inspect.isawaitable(r):
-                    r = await r
+                if isinstance(r, concurrent.futures.Future):
+                    r = r.result()
 
                 if r is not None:
                     return r
@@ -347,18 +345,18 @@ class Service:
 
 def background(f):
     """
-    Defer a command to run in the background.
-    Wraps both sync and async functions as an async handler.
+    Defer a plain (non-async) command to run in the background without blocking
+    the event loop. Must not be used with async functions; those run directly on
+    the event loop.
     """
+    assert not inspect.iscoroutinefunction(f), \
+        "@background requires a plain def, not async def"
 
     f.background = True
 
     @functools.wraps(f)
-    async def _inner(ctx, *args, **kwargs):
-        r = f(ctx, *args, **kwargs)
-        if inspect.isawaitable(r):
-            r = await r
-        return r
+    def _inner(ctx, *args, **kwargs):
+        return ctx.bot.event_loop.run_in_executor(ctx.bot.executor, functools.partial(f, ctx, *args, **kwargs))
 
     return _inner
 

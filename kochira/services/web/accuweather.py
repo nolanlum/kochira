@@ -4,11 +4,8 @@ Accuweather forecast.
 Get weather data from Accuweather.
 """
 
-import requests
-
 from kochira import config
-from kochira.service import Service, background, Config
-from kochira.userdata import UserData
+from kochira.service import Service, Config
 
 
 service = Service(__name__, __doc__)
@@ -21,7 +18,6 @@ class Config(Config):
 
 @service.command(r"!weather(?: (?P<unit>[cf])(?:elsius|ahrenheit)?)?(?: (?P<where>.+))?")
 @service.command(r"weather(?: (?:for|in) (?P<where>.+))?(?: in (?P<unit>[cf])(?:elsius|ahrenheit)?)?", mention=True)
-@background
 async def weather(ctx, where=None, unit=None):
     """
     Weather.
@@ -35,29 +31,27 @@ async def weather(ctx, where=None, unit=None):
     try:
         geocode = ctx.provider_for("geocode")
     except KeyError:
-        ctx.respond(ctx._("Sorry, I don't have a geocode provider loaded."))
+        await ctx.respond(ctx._("Sorry, I don't have a geocode provider loaded."))
         return
 
     results = await geocode(where)
 
     if not results:
-        ctx.respond(ctx._("I don't know where \"{where}\" is.").format(
+        await ctx.respond(ctx._("I don't know where \"{where}\" is.").format(
             where=where
         ))
         return
 
     location = results[0]["geometry"]["location"]
 
-    r = requests.get(
+    r = (await ctx.bot.http.get(
         "https://dataservice.accuweather.com/locations/v1/cities/geoposition/search?apikey={apikey}&q={q}".format(
             apikey=ctx.config.api_key,
             q="{lat},{lng}".format(**location)
-    )).json()
+    ))).json()
 
     if "Code" in r:
-        ctx.respond(ctx._("Sorry, there was an error: {Code}: {Message}").format(
-            **r
-        ))
+        await ctx.respond(ctx._("Sorry, there was an error: {Code}: {Message}").format(**r))
         return
 
     place = "{}, {}".format(
@@ -75,21 +69,18 @@ async def weather(ctx, where=None, unit=None):
         def _unitize(nonus, us):
             return nonus
 
-    r = requests.get("https://dataservice.accuweather.com/currentconditions/v1/{location_key}?apikey={apikey}&details=true".format(
-        location_key=r['Key'],
-        apikey=ctx.config.api_key
-    )).json()
+    r = (await ctx.bot.http.get(
+        "https://dataservice.accuweather.com/currentconditions/v1/{location_key}?apikey={apikey}&details=true".format(
+            location_key=r['Key'],
+            apikey=ctx.config.api_key
+    ))).json()
 
     if "Code" in r:
-        ctx.respond(ctx._("Sorry, there was an error: {Code}: {Message}").format(
-            **r
-        ))
+        await ctx.respond(ctx._("Sorry, there was an error: {Code}: {Message}").format(**r))
         return
 
     if not r:
-        ctx.respond(ctx._("Couldn't find weather for \"{where}\".").format(
-            where=where
-        ))
+        await ctx.respond(ctx._("Couldn't find weather for \"{where}\".").format(where=where))
         return
 
     observation = r[0]
@@ -102,7 +93,7 @@ async def weather(ctx, where=None, unit=None):
     precip = observation["PrecipitationSummary"]["Precipitation"][_unitize("Metric", "Imperial")]["Value"]
     weather = observation["WeatherText"]
 
-    ctx.respond(ctx._("Today's weather for {place} is: {weather}, {temp} °{cf} (feels like {feelslike} °{cf}), dew point {dew_point} °{cf}, wind from {wind_dir} at {wind} {kphmph}, {humidity}% humidity, {precip} {mmin} precipitation").format(
+    await ctx.respond(ctx._("Today's weather for {place} is: {weather}, {temp} °{cf} (feels like {feelslike} °{cf}), dew point {dew_point} °{cf}, wind from {wind_dir} at {wind} {kphmph}, {humidity}% humidity, {precip} {mmin} precipitation").format(
         place=place,
         weather=weather,
         feelslike=feelslike,

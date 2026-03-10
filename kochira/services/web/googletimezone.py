@@ -4,13 +4,11 @@ Google time zone.
 Get time zone information for places.
 """
 
-import requests
 import time
 from datetime import datetime
 
 from kochira import config
-from kochira.service import Service, background, Config
-from kochira.userdata import UserData
+from kochira.service import Service, Config
 
 service = Service(__name__, __doc__)
 
@@ -23,7 +21,6 @@ class Config(Config):
 @service.command(r"!time(?: (?P<where>.+))?")
 @service.command(r"time(?: (?:for|in) (?P<where>.+))?", mention=True)
 @service.command(r"when is (?P<where>.+)\??", mention=True)
-@background
 async def timezone(ctx, where=None):
     """
     Time.
@@ -43,9 +40,7 @@ async def timezone(ctx, where=None):
     results = await geocode(where)
 
     if not results:
-        ctx.respond(ctx._("I don't know where \"{where}\" is.").format(
-            where=where
-        ))
+        ctx.respond(ctx._("I don't know where \"{where}\" is.").format(where=where))
         return
 
     result = results[0]
@@ -55,7 +50,7 @@ async def timezone(ctx, where=None):
 
     now = time.time()
 
-    resp = requests.get(
+    resp = (await ctx.bot.http.get(
         "https://maps.googleapis.com/maps/api/timezone/json",
         params={
             "key": ctx.config.api_key,
@@ -63,12 +58,10 @@ async def timezone(ctx, where=None):
             "location": "{lat:.10},{lng:.10}".format(**location),
             "timestamp": now
         }
-    ).json()
+    )).json()
 
     if resp["status"] != "OK":
-        ctx.respond(ctx._("Received an error code: {status}").format(
-            status=resp["status"]
-        ))
+        ctx.respond(ctx._("Received an error code: {status}").format(status=resp["status"]))
         return
 
     ctx.respond(ctx._("The time in {place} ({timezone}) is: {time}.").format(

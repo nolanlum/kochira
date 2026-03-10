@@ -11,7 +11,7 @@ class Scheduler:
     def __init__(self, bot):
         self.bot = bot
 
-        self.timeouts = {}
+        self.timer_handles = {}
         self.periods = {}
 
         self._next_period_id = 0
@@ -21,7 +21,7 @@ class Scheduler:
         import inspect
         r = task_fn(ctx, *args, **kwargs)
         if inspect.isawaitable(r):
-            fut = asyncio.ensure_future(r)
+            fut = self.bot.event_loop.create_task(r)
             fut.add_done_callback(self._error_handler)
         return r
 
@@ -43,11 +43,11 @@ class Scheduler:
         def _handler():
             nonlocal handle
             self._run_task(_task, ctx, *_args, **_kwargs)
-            self.timeouts[_task.service.name].discard(handle)
+            self.timer_handles[_task.service.name].discard(handle)
 
-        handle = self.bot.event_loop.call_later(_time, _handler)
+        handle = self.bot.event_loop.call_later(_time.total_seconds(), _handler)
 
-        self.timeouts.setdefault(_task.service.name, set()).add(handle)
+        self.timer_handles.setdefault(_task.service.name, set()).add(handle)
         return (_task.service.name, handle)
 
     def schedule_every(self, _interval, _task, *_args, **_kwargs):
@@ -66,16 +66,16 @@ class Scheduler:
                 return
             self._run_task(_task, ctx, *_args, **_kwargs)
             # Re-arm for next interval.
-            self.bot.event_loop.call_later(_interval, _handler)
+            self.bot.event_loop.call_later(_interval.total_seconds(), _handler)
 
-        self.bot.event_loop.call_later(_interval, _handler)
+        self.bot.event_loop.call_later(_interval.total_seconds(), _handler)
         self.periods.setdefault(_task.service.name, set()).add(period_id)
         return (_task.service.name, period_id)
 
-    def unschedule_timeout(self, timeout):
-        service_name, handle = timeout
+    def unschedule_timer(self, timer):
+        service_name, handle = timer
         handle.cancel()
-        self.timeouts[service_name].discard(handle)
+        self.timer_handles[service_name].discard(handle)
 
     def unschedule_period(self, period):
         service_name, period_id = period
@@ -84,10 +84,10 @@ class Scheduler:
     def unschedule_service(self, service):
         logger.info("Unscheduling all tasks for service %s", service.name)
 
-        if service.name in self.timeouts:
-            for handle in list(self.timeouts[service.name]):
+        if service.name in self.timer_handles:
+            for handle in list(self.timer_handles[service.name]):
                 handle.cancel()
-            del self.timeouts[service.name]
+            del self.timer_handles[service.name]
 
         if service.name in self.periods:
             del self.periods[service.name]

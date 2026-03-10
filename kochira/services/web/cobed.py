@@ -9,8 +9,7 @@ import random
 import re
 
 from kochira import config
-from kochira.service import Service, background, Config
-import requests
+from kochira.service import Service, Config
 
 service = Service(__name__, __doc__)
 
@@ -24,24 +23,23 @@ class Config(Config):
     random_replyness = config.Field(doc="Probability the brain will generate a reply for all messages.", default=0.0)
 
 
-def reply_and_learn(url, username, password, what):
-    r = requests.post(url,
-                      params={"q": what},
-                      headers={"X-Cobed-Auth": username + ":" + password})
+async def reply_and_learn(http, url, username, password, what):
+    r = await http.post(url,
+                        params={"q": what},
+                        headers={"X-Cobed-Auth": username + ":" + password})
     r.raise_for_status()
     return r.text
 
 
-def learn(url, username, password, what):
-    requests.post(url,
-                  params={"q": what, "n": 1},
-                  headers={"X-Cobed-Auth": username + ":" + password}) \
-        .raise_for_status()
+async def learn(http, url, username, password, what):
+    r = await http.post(url,
+                        params={"q": what, "n": 1},
+                        headers={"X-Cobed-Auth": username + ":" + password})
+    r.raise_for_status()
 
 
 @service.hook("channel_message", priority=-9999)
-@background
-def do_reply(ctx, target, origin, message):
+async def do_reply(ctx, target, origin, message):
     front, _, rest = message.partition(" ")
 
     mention = False
@@ -63,15 +61,15 @@ def do_reply(ctx, target, origin, message):
         reply = True
 
     if reply and ctx.config.reply:
-        reply_message = reply_and_learn(ctx.config.url,
-                                        ctx.config.username,
-                                        ctx.config.password,
-                                        message)
+        reply_message = await reply_and_learn(ctx.bot.http,
+                                              ctx.config.url,
+                                              ctx.config.username,
+                                              ctx.config.password,
+                                              message)
 
         if mention:
-            ctx.respond(reply_message)
+            await ctx.respond(reply_message)
         else:
-            ctx.message(reply_message)
+            await ctx.message(reply_message)
     elif message:
-        learn(ctx.config.url, ctx.config.username, ctx.config.password, message)
-
+        await learn(ctx.bot.http, ctx.config.url, ctx.config.username, ctx.config.password, message)

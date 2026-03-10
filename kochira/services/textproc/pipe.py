@@ -4,7 +4,7 @@ Pipable commands.
 Allow the outputs of commands to be piped into each other.
 """
 
-import types
+import asyncio
 import re
 from kochira.client import Client
 from kochira.service import Service, HookContext
@@ -15,13 +15,13 @@ service = Service(__name__, __doc__)
 class BufferedClient(Client):
     class context_factory(HookContext):
         def respond(self, message):
-            self.message(message)
+            return self.message(message)
 
     def __init__(self, client):
         self.__dict__.update(client.__dict__)
         self.buffer = []
 
-    def message(self, target, message):
+    async def message(self, target, message):
         self.buffer.append(message)
 
 
@@ -89,6 +89,7 @@ async def run_pipe(ctx, commands):
 
         await c._run_hooks("channel_message", ctx.target, ctx.origin,
                            [ctx.target, ctx.origin, message])
+        await asyncio.sleep(0)  # allow any non-async hooks to post messages to the buffer
         acc = "\n".join(c.buffer)
 
-    ctx.respond(acc)
+    await ctx.respond(acc)

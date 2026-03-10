@@ -4,11 +4,8 @@ Pirate Weather forecast.
 Get weather data from Pirate Weather.
 """
 
-import requests
-
 from kochira import config
-from kochira.service import Service, background, Config
-from kochira.userdata import UserData
+from kochira.service import Service, Config
 
 
 service = Service(__name__, __doc__)
@@ -21,7 +18,6 @@ class Config(Config):
 
 @service.command(r"!weather(?: (?P<unit>[cf])(?:elsius|ahrenheit)?)?(?: (?P<where>.+))?")
 @service.command(r"weather(?: (?:for|in) (?P<where>.+))?(?: in (?P<unit>[cf])(?:elsius|ahrenheit)?)?", mention=True)
-@background
 async def weather(ctx, where=None, unit=None):
     """
     Weather.
@@ -35,15 +31,13 @@ async def weather(ctx, where=None, unit=None):
     try:
         geocode = ctx.provider_for("geocode")
     except KeyError:
-        ctx.respond(ctx._("Sorry, I don't have a geocode provider loaded."))
+        await ctx.respond(ctx._("Sorry, I don't have a geocode provider loaded."))
         return
 
     results = await geocode(where)
 
     if not results:
-        ctx.respond(ctx._("I don't know where \"{where}\" is.").format(
-            where=where
-        ))
+        await ctx.respond(ctx._("I don't know where \"{where}\" is.").format(where=where))
         return
 
     def address_component(component_type):
@@ -64,32 +58,25 @@ async def weather(ctx, where=None, unit=None):
 
     location = results[0]["geometry"]["location"]
 
-    r = requests.get(
+    r = (await ctx.bot.http.get(
         "https://api.pirateweather.net/forecast/{apikey}/{q}?units={units}&exclude=minutely,hourly,alerts&version=2".format(
             apikey=ctx.config.api_key,
             q="{lat},{lng}".format(**location),
             units=_unitize("si", "us")
-    )).json()
+    ))).json()
 
     if "detail" in r or "message" in r:
         error_message = r.get("detail") or r["message"]
-        ctx.respond(ctx._("Sorry, there was an error: {error}").format(
-            error=error_message
-        ))
+        await ctx.respond(ctx._("Sorry, there was an error: {error}").format(error=error_message))
         return
 
     if not r:
-        ctx.respond(ctx._("Couldn't find weather for \"{where}\".").format(
-            where=where
-        ))
+        await ctx.respond(ctx._("Couldn't find weather for \"{where}\".").format(where=where))
         return
 
     locality = address_component('locality')['short_name'] or 'Unknown'
     admin_area_L1 = address_component('administrative_area_level_1')['short_name'] or 'Unknown'
-    place = "{}, {}".format(
-        locality,
-        admin_area_L1
-    )
+    place = "{}, {}".format(locality, admin_area_L1)
 
     observation = r["currently"]
     temp = round(observation["temperature"], 1)
@@ -101,7 +88,7 @@ async def weather(ctx, where=None, unit=None):
     precip = round(r["daily"].get("precipAccumulation") or 0, 1)
     weather = observation["summary"]
 
-    ctx.respond(ctx._("Today's weather for {place} is: {weather}, {temp} °{cf} (feels like {feelslike} °{cf}), dew point {dew_point} °{cf}, wind from {wind_dir} at {wind} {kphmph}, {humidity}% humidity, {precip} {cmin} precipitation").format(
+    await ctx.respond(ctx._("Today's weather for {place} is: {weather}, {temp} °{cf} (feels like {feelslike} °{cf}), dew point {dew_point} °{cf}, wind from {wind_dir} at {wind} {kphmph}, {humidity}% humidity, {precip} {cmin} precipitation").format(
         place=place,
         weather=weather,
         feelslike=feelslike,

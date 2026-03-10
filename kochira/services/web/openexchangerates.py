@@ -4,12 +4,11 @@ Open Exchange Rates currency conversion.
 Convert between currencies using Open Exchange Rates.
 """
 
-import requests
 import ccy
 import time
 
 from kochira import config
-from kochira.service import Service, background, Config
+from kochira.service import Service, Config
 from kochira.userdata import UserData
 
 service = Service(__name__, __doc__)
@@ -26,11 +25,11 @@ def initialize_storage(ctx):
     ctx.storage.names = None
 
 
-def _update_currencies(app_id, storage):
+async def _update_currencies(http, app_id, storage):
     now = time.time()
 
     if storage.names is None:
-        req = requests.get("http://openexchangerates.org/api/currencies.json")
+        req = await http.get("http://openexchangerates.org/api/currencies.json")
         req.raise_for_status()
 
         storage.names = req.json()
@@ -39,7 +38,7 @@ def _update_currencies(app_id, storage):
             storage.names["XBT"] = storage.names["BTC"]
 
     if storage.last_update + 60 * 60 <= now:
-        req = requests.get(
+        req = await http.get(
             "https://openexchangerates.org/api/latest.json",
             params={
                 "app_id": app_id,
@@ -58,33 +57,32 @@ def _update_currencies(app_id, storage):
 @service.command(r"price of (?P<from_currency>\S+)(?: in (?P<to_currency>\S+))?", mention=True)
 @service.command(r"!convert (?P<amount>\d+(?:\.\d*)?)?(?: ?(?P<from_currency>\S+))?(?: (?P<to_currency>\S+))?")
 @service.command(r"convert (?P<amount>\d+(?:\.\d*)?)?(?: ?(?P<from_currency>\S+))?(?: to (?P<to_currency>\S+))?", mention=True)
-@background
 async def convert(ctx, amount: float=1, from_currency=None, to_currency=None):
     """
     Convert.
 
     Convert between currencies. Defaults to geolocated currencies.
     """
-    _update_currencies(ctx.config.app_id, ctx.storage)
+    await _update_currencies(ctx.bot.http, ctx.config.app_id, ctx.storage)
 
     if amount is None:
         amount = 1
 
     if from_currency is None and to_currency is None:
-        ctx.respond(ctx._("You haven't specified a currency pair."))
+        await ctx.respond(ctx._("You haven't specified a currency pair."))
         return
 
     if from_currency is None or to_currency is None:
         try:
             geocode = ctx.provider_for("geocode")
         except KeyError:
-            ctx.respond(ctx._("Sorry, I don't have a geocode provider loaded, and you haven't specified both currencies."))
+            await ctx.respond(ctx._("Sorry, I don't have a geocode provider loaded, and you haven't specified both currencies."))
             return
 
         user_data = await UserData.lookup_default(ctx.client, ctx.origin)
 
         if "location" not in user_data:
-            ctx.respond(ctx._("You don't have location data set, so I can't guess what currency you want."))
+            await ctx.respond(ctx._("You don't have location data set, so I can't guess what currency you want."))
             return
 
         result = (await geocode(ctx.origin))[0]
@@ -95,7 +93,7 @@ async def convert(ctx, amount: float=1, from_currency=None, to_currency=None):
         )
 
         if currency is None:
-            ctx.respond(ctx._("I don't know the currency for your location."))
+            await ctx.respond(ctx._("I don't know the currency for your location."))
             return
 
         if from_currency is None:
@@ -109,7 +107,7 @@ async def convert(ctx, amount: float=1, from_currency=None, to_currency=None):
 
     for currency in [from_currency, to_currency]:
         if currency not in ctx.storage.rates:
-            ctx.respond(ctx._("I don't know the exchange rate for {currency}.").format(
+            await ctx.respond(ctx._("I don't know the exchange rate for {currency}.").format(
                 currency=currency
             ))
             return
@@ -119,7 +117,7 @@ async def convert(ctx, amount: float=1, from_currency=None, to_currency=None):
 
     converted = amount * num / den
 
-    ctx.respond(ctx._("{amount:.4f} {from_currency} ({from_currency_name}) = {converted:.4f} {to_currency} ({to_currency_name})").format(
+    await ctx.respond(ctx._("{amount:.4f} {from_currency} ({from_currency_name}) = {converted:.4f} {to_currency} ({to_currency_name})").format(
         amount=amount,
         from_currency=from_currency,
         from_currency_name=ctx.storage.names[from_currency],

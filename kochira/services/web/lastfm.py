@@ -5,15 +5,13 @@ Allow users to display their now playing status and compare music tastes using
 Last.fm.
 """
 
-import requests
-import gzip
 import humanize
 from datetime import datetime
 from lxml import etree
 
 from kochira import config
 from kochira.userdata import UserData
-from kochira.service import Service, background, Config
+from kochira.service import Service, Config
 
 service = Service(__name__, __doc__)
 
@@ -22,25 +20,20 @@ class Config(Config):
     api_key = config.Field(doc="Last.fm API key.")
 
 
-def query_lastfm(api_key, method, arguments):
+async def query_lastfm(http, api_key, method, arguments):
     params = arguments.copy()
     params.update({
         "method": method,
         "api_key": api_key
     })
 
-    r = requests.get(
-        "http://ws.audioscrobbler.com/2.0/",
-        params=params,
-        stream=True
-    )
-
-    return etree.parse(gzip.GzipFile(fileobj=r.raw))
+    r = await http.get("http://ws.audioscrobbler.com/2.0/", params=params)
+    return etree.fromstring(r.content)
 
 
-def get_compare_users(api_key, user1, user2):
-    res = query_lastfm(
-        api_key,
+async def get_compare_users(http, api_key, user1, user2):
+    res = await query_lastfm(
+        http, api_key,
         "tasteometer.compare",
         {
             "type1": "user",
@@ -68,9 +61,9 @@ def get_compare_users(api_key, user1, user2):
     return None
 
 
-def get_user_now_playing(api_key, user):
-    res = query_lastfm(
-        api_key,
+async def get_user_now_playing(http, api_key, user):
+    res = await query_lastfm(
+        http, api_key,
         "user.getRecentTracks",
         {
             "user": user,
@@ -97,8 +90,8 @@ def get_user_now_playing(api_key, user):
         ts = int(ts) if ts is not None else None
 
         # get track info
-        track_tags_r = query_lastfm(
-            api_key,
+        track_tags_r = await query_lastfm(
+            http, api_key,
             "track.getTopTags", {
                 "artist": artist,
                 "track": name
@@ -106,8 +99,8 @@ def get_user_now_playing(api_key, user):
         )
         tags = track_tags_r.xpath("/lfm[@status='ok']/toptags/tag/name/text()")
 
-        track_info_r = query_lastfm(
-            api_key,
+        track_info_r = await query_lastfm(
+            http, api_key,
             "track.getInfo", {
                 "username": user,
                 "artist": artist,
@@ -160,13 +153,13 @@ async def setup_user(ctx, lfm_username):
     try:
         user_data = await UserData.lookup(ctx.client, ctx.origin)
     except UserData.DoesNotExist:
-        ctx.respond(ctx._("You must be logged in to set your Last.fm username."))
+        await ctx.respond(ctx._("You must be logged in to set your Last.fm username."))
         return
 
     user_data["lastfm_user"] = lfm_username
     user_data.save()
 
-    ctx.respond(ctx._("You have been associated with the Last.fm username {user}.").format(user=lfm_username))
+    await ctx.respond(ctx._("You have been associated with the Last.fm username {user}.").format(user=lfm_username))
 
 
 @service.command(r"!lfm$")
@@ -181,21 +174,20 @@ async def check_user(ctx):
     try:
         user_data = await UserData.lookup(ctx.client, ctx.origin)
     except UserData.DoesNotExist:
-        ctx.respond(ctx._("You must be logged in to set your Last.fm username."))
+        await ctx.respond(ctx._("You must be logged in to set your Last.fm username."))
         return
 
     if "lastfm_user" not in user_data:
-        ctx.respond(ctx._("You don't have a Last.fm username associated with your nickname. Please use \"!lfm\" to associate one."))
+        await ctx.respond(ctx._("You don't have a Last.fm username associated with your nickname. Please use \"!lfm\" to associate one."))
         return
 
-    ctx.respond(ctx._("Your nickname is associated with {user}.").format(user=user_data["lastfm_user"]))
+    await ctx.respond(ctx._("Your nickname is associated with {user}.").format(user=user_data["lastfm_user"]))
 
 
 @service.command(r"!tasteometer (?P<user1>\S+) (?P<user2>\S+)$")
 @service.command(r"!tasteometer (?P<user2>\S+)$")
 @service.command(r"compare my last\.fm with (?P<user2>\S+)$", mention=True)
 @service.command(r"compare (?P<user1>\S+) and (?P<user2>\S+) on last\.fms$", mention=True)
-@background
 async def compare_users(ctx, user2, user1=None):
     """
     Tasteometer.
@@ -208,13 +200,13 @@ async def compare_users(ctx, user2, user1=None):
     lfm1 = await get_lfm_username(ctx.client, user1)
     lfm2 = await get_lfm_username(ctx.client, user2)
 
-    comparison = get_compare_users(ctx.config.api_key, lfm1, lfm2)
+    comparison = await get_compare_users(ctx.bot.http, ctx.config.api_key, lfm1, lfm2)
 
     if comparison is None:
-        ctx.respond(ctx._("Couldn't compare."))
+        await ctx.respond(ctx._("Couldn't compare."))
         return
 
-    ctx.respond(ctx._("{user1} ({lfm1}) and {user2} ({lfm2}) are {score:.2%} similar: {artists}").format(
+    await ctx.respond(ctx._("{user1} ({lfm1}) and {user2} ({lfm2}) are {score:.2%} similar: {artists}").format(
         user1=user1,
         lfm1=lfm1,
         user2=user2,
@@ -228,7 +220,6 @@ async def compare_users(ctx, user2, user1=None):
 @service.command(r"!np (?P<who>\S+)$")
 @service.command(r"what am i playing\??$", mention=True)
 @service.command(r"what is (?P<who>\S+) playing\??$", mention=True)
-@background
 async def now_playing(ctx, who=None):
     """
     Get username.
@@ -239,10 +230,10 @@ async def now_playing(ctx, who=None):
         who = ctx.origin
 
     lfm = await get_lfm_username(ctx.client, who)
-    track = get_user_now_playing(ctx.config.api_key, lfm)
+    track = await get_user_now_playing(ctx.bot.http, ctx.config.api_key, lfm)
 
     if track is None:
-        ctx.respond(ctx._("{who} ({lfm}) has never scrobbled anything.").format(
+        await ctx.respond(ctx._("{who} ({lfm}) has never scrobbled anything.").format(
             who=who,
             lfm=lfm
         ))
@@ -258,14 +249,14 @@ async def now_playing(ctx, who=None):
     )
 
     if not track["now_playing"]:
-        ctx.respond(ctx._("{who} ({lfm}) was playing about {dt}: {descr}").format(
+        await ctx.respond(ctx._("{who} ({lfm}) was playing about {dt}: {descr}").format(
             who=who,
             lfm=lfm,
             dt=humanize.naturaltime(datetime.fromtimestamp(track["ts"])),
             descr=track_descr
         ))
     else:
-        ctx.respond(ctx._("{who} ({lfm}) is playing: {descr}").format(
+        await ctx.respond(ctx._("{who} ({lfm}) is playing: {descr}").format(
             who=who,
             lfm=lfm,
             descr=track_descr

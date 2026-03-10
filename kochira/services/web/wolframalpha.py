@@ -5,11 +5,10 @@ Runs queries on Wolfram|Alpha.
 """
 
 import re
-import requests
 from lxml import etree
 
 from kochira import config
-from kochira.service import Service, background, Config
+from kochira.service import Service, Config
 from kochira.userdata import UserData
 
 service = Service(__name__, __doc__)
@@ -21,7 +20,6 @@ class Config(Config):
 
 @service.command(r"!wa (?P<query>.+)$")
 @service.command(r"(?:compute|calculate|mathify) (?:for (?P<who>\S+))?(?P<query>.+)$", mention=True)
-@background
 async def compute(ctx, query, who=None):
     """
     Compute.
@@ -33,7 +31,7 @@ async def compute(ctx, query, who=None):
         user_data = await UserData.lookup_default(ctx.client, who)
 
         if "location" not in user_data:
-            ctx.respond(ctx._("I don't have location information for {who}.").format(who=who))
+            await ctx.respond(ctx._("I don't have location information for {who}.").format(who=who))
             return
     else:
         try:
@@ -52,16 +50,13 @@ async def compute(ctx, query, who=None):
     if location is not None:
         params["latlong"] = "{lat},{lng}".format(**location)
 
-    resp = requests.get("http://api.wolframalpha.com/v2/query",
-        params=params,
-        stream=True
-    )
+    resp = await ctx.bot.http.get("http://api.wolframalpha.com/v2/query", params=params)
 
-    tree = etree.parse(resp.raw)
+    tree = etree.fromstring(resp.content)
     result_node = tree.xpath("/queryresult[@success='true']")
 
     if not result_node:
-        ctx.respond(ctx._("Couldn't compute that."))
+        await ctx.respond(ctx._("Couldn't compute that."))
         return
 
     result_node, = result_node
@@ -75,4 +70,4 @@ async def compute(ctx, query, who=None):
         "\n".join(result_node.xpath("pod[@primary='true']/subpod[1]/plaintext/text()")).strip()
     ).replace("\n", "; ")
 
-    ctx.respond(out)
+    await ctx.respond(out)

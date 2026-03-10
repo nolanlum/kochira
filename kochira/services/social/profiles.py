@@ -26,13 +26,13 @@ async def forget_profile(ctx):
         exists = "profile" in user_data
 
     if not exists:
-        ctx.respond(ctx._("I don't know who you are."))
+        await ctx.respond(ctx._("I don't know who you are."))
         return
 
     del user_data["profile"]
     user_data.save()
 
-    ctx.respond(ctx._("Okay, I won't remember you anymore."))
+    await ctx.respond(ctx._("Okay, I won't remember you anymore."))
 
 
 @service.command(r"[Ii](?: a|')m (?P<text>.+)$", mention=True)
@@ -46,13 +46,13 @@ async def remember_profile(ctx, text):
     try:
         user_data = await ctx.lookup_user_data()
     except UserData.DoesNotExist:
-        ctx.respond(ctx._("Please authenticate before you add a profile."))
+        await ctx.respond(ctx._("Please authenticate before you add a profile."))
         return
 
     user_data["profile"] = text
     user_data.save()
 
-    ctx.respond(ctx._("Okay, I'll remember you."))
+    await ctx.respond(ctx._("Okay, I'll remember you."))
 
 
 @service.command(r"who am [Ii]\??$", mention=True)
@@ -69,12 +69,12 @@ async def get_profile(ctx, who=None):
     user_data = await UserData.lookup_default(ctx.client, who)
 
     if "profile" not in user_data:
-        ctx.respond(ctx._("{who} hasn't told me who they are yet.").format(
+        await ctx.respond(ctx._("{who} hasn't told me who they are yet.").format(
             who=who
         ))
         return
 
-    ctx.respond(ctx._("{who} is {text}").format(
+    await ctx.respond(ctx._("{who} is {text}").format(
         who=who,
         text=user_data["profile"]
     ))

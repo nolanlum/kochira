@@ -4,12 +4,8 @@ Hipchat support.
 Translate user IDs to @mention names.
 """
 
-import requests
-import ccy
-import time
-
 from kochira import config
-from kochira.service import Service, background, Config
+from kochira.service import Service, Config
 
 service = Service(__name__, __doc__)
 
@@ -25,9 +21,9 @@ def initialize_storage(ctx):
     ctx.storage.users = {}
 
 
-def _update_users(auth_token, storage):
-    req = requests.get("https://api.hipchat.com/v1/users/list",
-                       params={"auth_token": auth_token})
+async def _update_users(http, auth_token, storage):
+    req = await http.get("https://api.hipchat.com/v1/users/list",
+                         params={"auth_token": auth_token})
     req.raise_for_status()
 
     users = {}
@@ -39,17 +35,16 @@ def _update_users(auth_token, storage):
 
 
 @service.hook("respond")
-@background
-def translate_mention(ctx, target, origin, message):
+async def translate_mention(ctx, target, origin, message):
     _, user_id = ctx.client.users[origin]["username"].split("_")
     user_id = int(user_id)
 
     if user_id not in ctx.storage.users:
-        _update_users(ctx.config.auth_token, ctx.storage)
+        await _update_users(ctx.bot.http, ctx.config.auth_token, ctx.storage)
 
     origin = ctx.storage.users.get(user_id, origin)
 
-    ctx.message(ctx.client.config.response_format.format(
+    await ctx.message(ctx.client.config.response_format.format(
         origin=origin,
         message=message
     ))

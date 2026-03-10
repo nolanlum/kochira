@@ -21,7 +21,7 @@ with open('requirements.txt', 'r') as f:
 
 
 setup(name="kochira",
-      version="0.0",
+      version="0.1",
       description="kochira",
       author="",
       author_email="",

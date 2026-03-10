@@ -5,9 +5,8 @@ Fetches and displays metadata for web pages, images and more.
 """
 
 import humanize
+import httpx
 import re
-import requests
-import requests.packages.urllib3 as urllib3
 import tempfile
 from datetime import timedelta
 from bs4 import BeautifulSoup
@@ -15,10 +14,9 @@ from pymediainfo import MediaInfo
 from PIL import Image
 
 from kochira import config
-from kochira.service import Service, background, Config
+from kochira.service import Service, Config
 
 service = Service(__name__, __doc__)
-urllib3.disable_warnings()
 
 
 @service.config
@@ -126,49 +124,52 @@ HANDLERS = {
     "video/webm": handle_media,
 }
 
+# url.py uses a local client with verify=False to handle arbitrary user-pasted
+# URLs that may have self-signed or otherwise invalid TLS certificates.
 @service.hook("channel_message")
-@background
-def detect_urls(ctx, origin, target, message):
+async def detect_urls(ctx, origin, target, message):
     found_info = {}
 
     urls = re.findall(r'http[s]?://[^\s<>"]+|www\.[^\s<>"]+', message)
 
-    for i, url in enumerate(urls):
-        if not (url.startswith("http:") or url.startswith("https:")):
-            url = "http://" + url
+    async with httpx.AsyncClient(verify=False) as client:
+        for i, url in enumerate(urls):
+            if not (url.startswith("http:") or url.startswith("https:")):
+                url = "http://" + url
 
-        if url not in found_info:
-            try:
-                resp = requests.head(url, headers=HEADERS, verify=False)
-            except requests.RequestException as e:
-                info = "\x02Error:\x02 " + str(e)
-            else:
-                content_type = resp.headers.get("content-type", "text/html").split(";")[0]
-
-                if content_type in HANDLERS:
-                    resp = requests.get(url, headers=HEADERS, verify=False,
-                                        stream=True)
-                    content = b""
-
-                    for chunk in resp.iter_content(2048):
-                        content += chunk
-                        if len(content) > ctx.config.max_size:
-                            resp.close()
-                            info = "\x02Content Type:\x02 " + content_type
-                            continue
-
-                    info = HANDLERS[content_type](content)
+            if url not in found_info:
+                try:
+                    resp = await client.head(url, headers=HEADERS)
+                except httpx.RequestError as e:
+                    info = "\x02Error:\x02 " + str(e)
                 else:
-                    info = "\x02Content Type:\x02 " + content_type
-            found_info[url] = info
-        else:
-            info = found_info[url]
+                    content_type = resp.headers.get("content-type", "text/html").split(";")[0]
 
-        if len(urls) == 1:
-            ctx.message(info)
-        else:
-            ctx.message("{info} ({i} of {num})".format(
-                i=i + 1,
-                num=len(urls),
-                info=info
-            ))
+                    if content_type in HANDLERS:
+                        content = b""
+                        too_large = False
+                        async with client.stream("GET", url, headers=HEADERS) as resp:
+                            async for chunk in resp.aiter_bytes(2048):
+                                content += chunk
+                                if len(content) > ctx.config.max_size:
+                                    too_large = True
+                                    break
+
+                        if too_large:
+                            info = "\x02Content Type:\x02 " + content_type
+                        else:
+                            info = HANDLERS[content_type](content)
+                    else:
+                        info = "\x02Content Type:\x02 " + content_type
+                found_info[url] = info
+            else:
+                info = found_info[url]
+
+            if len(urls) == 1:
+                await ctx.message(info)
+            else:
+                await ctx.message("{info} ({i} of {num})".format(
+                    i=i + 1,
+                    num=len(urls),
+                    info=info
+                ))

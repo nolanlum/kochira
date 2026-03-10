@@ -91,14 +91,14 @@ def list_badwords(ctx):
 
 
 @service.hook("channel_message", priority=2500)
-def check_badwords(ctx, target, origin, message):
-    def _callback():
+async def check_badwords(ctx, target, origin, message):
+    async def _callback():
         if ctx.config.chanserv_kick:
-            ctx.client.message("ChanServ", "KICK {target} {origin} {message}".format(
+            await ctx.client.message("ChanServ", "KICK {target} {origin} {message}".format(
                                target=ctx.target, origin=ctx.origin,
                                message=ctx.config.kick_message))
         else:
-            ctx.client.rawmsg("KICK", ctx.target, ctx.origin,
+            await ctx.client.rawmsg("KICK", ctx.target, ctx.origin,
                               ctx.config.kick_message)
 
     for badword in Badword.select().where(Badword.client_name == ctx.client.name,
@@ -118,9 +118,9 @@ def check_badwords(ctx, target, origin, message):
                 ops.update(ctx.client.channels[target]["modes"].get(op_mode, []))
 
             if ctx.client.nickname not in ops and ctx.config.chanserv_op is not None:
-                ctx.client.message("ChanServ", ctx.config.chanserv_op.format(
-                                   target=ctx.target, me=ctx.client.nickname))
-                ctx.bot.event_loop.call_soon_threadsafe(_callback)
+                await ctx.client.message("ChanServ", ctx.config.chanserv_op.format(
+                                         target=ctx.target, me=ctx.client.nickname))
+                await _callback()
             else:
-                _callback()
+                await _callback()
             return Service.EAT

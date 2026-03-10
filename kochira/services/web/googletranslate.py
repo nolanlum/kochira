@@ -4,10 +4,9 @@ Translation between languages.
 Use Google Translate to perform translations between languages.
 """
 
-import requests
 import pycountry
 
-from kochira.service import Service, background
+from kochira.service import Service
 
 service = Service(__name__, __doc__)
 
@@ -21,8 +20,8 @@ for language in pycountry.languages:
             continue
 
 
-def perform_translation(term, sl, tl):
-    return requests.get(
+async def perform_translation(http, term, sl, tl):
+    return (await http.get(
         "http://translate.google.com/translate_a/single",
         params={
             "client": "t",
@@ -35,12 +34,11 @@ def perform_translation(term, sl, tl):
             "oe": "UTF-8"
         },
         headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36"}
-    ).json()
+    )).json()
 
 
 @service.command(r"(?:transliterate|romanize) (?P<term>.+?)(?: from (?P<from_lang>.+?))?$", mention=True)
-@background
-def transliterate(ctx, term, from_lang=None):
+async def transliterate(ctx, term, from_lang=None):
     """
     Transliterate.
 
@@ -54,25 +52,24 @@ def transliterate(ctx, term, from_lang=None):
         try:
             sl = LANGUAGES[from_lang.lower()]
         except KeyError:
-            ctx.respond(ctx._("Sorry, I don't understand \"{lang}\".").format(lang=from_lang))
+            await ctx.respond(ctx._("Sorry, I don't understand \"{lang}\".").format(lang=from_lang))
             return
 
-    r = perform_translation(term, sl, sl)
+    r = await perform_translation(ctx.bot.http, term, sl, sl)
 
     tlit = " ".join(x["src_translit"] for x in r["sentences"])
 
     if not tlit:
-        ctx.respond(ctx._("There is no transliteration."))
+        await ctx.respond(ctx._("There is no transliteration."))
         return
 
-    ctx.respond(tlit)
+    await ctx.respond(tlit)
 
 
 @service.command(r"what is (?P<term>.+) in (?P<to_lang>.+)\??$", mention=True)
 @service.command(r"(?:translate) (?P<term>.+?)(?: from (?P<from_lang>.+?))?(?: to (?P<to_lang>.+))?$", mention=True)
 @service.command(r"!tra(nslate)?(?: (?P<from_lang>.+?)-(?P<to_lang>.+?))? (?P<term>.+)")
-@background
-def translate(ctx, term, to_lang=None, from_lang=None):
+async def translate(ctx, term, to_lang=None, from_lang=None):
     """
     Translate.
 
@@ -90,7 +87,7 @@ def translate(ctx, term, to_lang=None, from_lang=None):
             else:
                 sl = LANGUAGES[from_lang.lower()]
         except KeyError:
-            ctx.respond(ctx._("Sorry, I don't understand from language: \"{lang}\".").format(lang=from_lang))
+            await ctx.respond(ctx._("Sorry, I don't understand from language: \"{lang}\".").format(lang=from_lang))
             return
 
     if to_lang is None:
@@ -102,10 +99,10 @@ def translate(ctx, term, to_lang=None, from_lang=None):
             else:
                 tl = LANGUAGES[to_lang.lower()]
         except KeyError:
-            ctx.respond(ctx._("Sorry, I don't understand to language: \"{lang}\".").format(lang=to_lang))
+            await ctx.respond(ctx._("Sorry, I don't understand to language: \"{lang}\".").format(lang=to_lang))
             return
 
-    r = perform_translation(term, sl, tl)
+    r = await perform_translation(ctx.bot.http, term, sl, tl)
 
     trans = " ".join(x["trans"] for x in r["sentences"])
 
@@ -118,4 +115,4 @@ def translate(ctx, term, to_lang=None, from_lang=None):
     if tlit:
         trans += " (" + tlit + ")"
 
-    ctx.respond(trans)
+    await ctx.respond(trans)

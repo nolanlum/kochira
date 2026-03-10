@@ -4,11 +4,8 @@ Weather Underground forecast.
 Get weather data from Weather Underground.
 """
 
-import requests
-
 from kochira import config
-from kochira.service import Service, background, Config
-from kochira.userdata import UserData
+from kochira.service import Service, Config
 
 service = Service(__name__, __doc__)
 
@@ -20,7 +17,6 @@ class Config(Config):
 
 @service.command(r"!weather(?: (?P<where>.+))?")
 @service.command(r"weather(?: (?:for|in) (?P<where>.+))?", mention=True)
-@background
 async def weather(ctx, where=None):
     """
     Weather.
@@ -40,28 +36,22 @@ async def weather(ctx, where=None):
     results = await geocode(where)
 
     if not results:
-        ctx.respond(ctx._("I don't know where \"{where}\" is.").format(
-            where=where
-        ))
+        ctx.respond(ctx._("I don't know where \"{where}\" is.").format(where=where))
         return
 
     location = results[0]["geometry"]["location"]
 
-    r = requests.get("http://api.wunderground.com/api/{api_key}/conditions/q/{lat},{lng}.json".format(
+    r = (await ctx.bot.http.get("http://api.wunderground.com/api/{api_key}/conditions/q/{lat},{lng}.json".format(
         api_key=ctx.config.api_key,
         **location
-    )).json()
+    ))).json()
 
     if "error" in r:
-        ctx.respond(ctx._("Sorry, there was an error: {type}: {description}").format(
-            **r["error"]
-        ))
+        ctx.respond(ctx._("Sorry, there was an error: {type}: {description}").format(**r["error"]))
         return
 
     if "current_observation" not in r:
-        ctx.respond(ctx._("Couldn't find weather for \"{where}\".").format(
-            where=where
-        ))
+        ctx.respond(ctx._("Couldn't find weather for \"{where}\".").format(where=where))
         return
 
     observation = r["current_observation"]
@@ -100,7 +90,6 @@ async def weather(ctx, where=None):
 
 @service.command(r"!forecast(?: (?P<where>.+?))?(?: (?P<num>\d+))?")
 @service.command(r"forecast(?: (?:for|in) (?P<where>.+?))?(?: \((?P<num>\d+)\))?\??", mention=True)
-@background
 async def forecast(ctx, where=None, num: int=0):
     """
     Forecast.
@@ -120,28 +109,22 @@ async def forecast(ctx, where=None, num: int=0):
     results = await geocode(where)
 
     if not results:
-        ctx.respond(ctx._("I don't know where \"{where}\" is.").format(
-            where=where
-        ))
+        ctx.respond(ctx._("I don't know where \"{where}\" is.").format(where=where))
         return
 
     location = results[0]["geometry"]["location"]
 
-    r = requests.get("http://api.wunderground.com/api/{api_key}/forecast/q/{lat},{lng}.json".format(
+    r = (await ctx.bot.http.get("http://api.wunderground.com/api/{api_key}/forecast/q/{lat},{lng}.json".format(
         api_key=ctx.config.api_key,
         **location
-    )).json()
+    ))).json()
 
     if "error" in r:
-        ctx.respond(ctx._("Sorry, there was an error: {type}: {description}").format(
-            **r["error"]
-        ))
+        ctx.respond(ctx._("Sorry, there was an error: {type}: {description}").format(**r["error"]))
         return
 
     if "forecast" not in r:
-        ctx.respond(ctx._("Couldn't find weather for \"{where}\".").format(
-            where=where
-        ))
+        ctx.respond(ctx._("Couldn't find weather for \"{where}\".").format(where=where))
         return
 
     forecasts = r["forecast"]["txt_forecast"]["forecastday"]

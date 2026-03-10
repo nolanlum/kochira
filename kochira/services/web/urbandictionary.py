@@ -4,25 +4,22 @@ UrbanDictionary lookup.
 Retrieves definitions of terms from UrbanDictionary.
 """
 
-import requests
-
-from kochira.service import Service, background
+from kochira.service import Service
 
 service = Service(__name__, __doc__)
 
 
 @service.command(r"!ud (?P<term>.+?)(?: (?P<num>\d+))?$")
-@background
-def define(ctx, term, num: int=None):
+async def define(ctx, term, num: int=None):
     """
     Define.
 
     Look up the given term on UrbanDictionary.
     """
 
-    r = requests.get("https://api.urbandictionary.com/v0/define", params={
+    r = (await ctx.bot.http.get("https://api.urbandictionary.com/v0/define", params={
         "term": term
-    }).json()
+    })).json()
 
     exact_matches = [
         result for result in r["list"]

@@ -34,20 +34,20 @@ async def add_karma(ctx, who):
     now = datetime.utcnow()
 
     if ctx.client.normalize(ctx.origin) == ctx.client.normalize(who):
-        ctx.respond(ctx._("You can't give yourself karma."))
+        await ctx.respond(ctx._("You can't give yourself karma."))
         return
 
     last_grant = ctx.storage.granters.get((ctx.origin, ctx.client.network),
                                           datetime.fromtimestamp(0))
 
     if now - last_grant <= timedelta(seconds=ctx.config.timeout):
-        ctx.respond(ctx._("Please wait a while before granting someone karma."))
+        await ctx.respond(ctx._("Please wait a while before granting someone karma."))
         return
 
     try:
         user_data = await UserData.lookup(ctx.client, who)
     except UserData.DoesNotExist:
-        ctx.respond(ctx._("{who}'s account is not registered.").format(
+        await ctx.respond(ctx._("{who}'s account is not registered.").format(
             who=who
         ))
         return
@@ -58,7 +58,7 @@ async def add_karma(ctx, who):
 
     ctx.storage.granters[ctx.origin, ctx.client.network] = now
 
-    ctx.respond(ctx._("{who} now has {n} karma.").format(
+    await ctx.respond(ctx._("{who} now has {n} karma.").format(
         who=who,
         n=user_data["karma"]
     ))
@@ -76,7 +76,7 @@ async def get_karma(ctx, who):
     user_data = await UserData.lookup_default(ctx.client, who)
     karma = user_data.get("karma", 0)
 
-    ctx.respond(ctx._("{who} has {n} karma.").format(
+    await ctx.respond(ctx._("{who} has {n} karma.").format(
         who=who,
         n=karma
     ))

@@ -61,7 +61,7 @@ def reschedule_reminders(ctx):
 
 
 @service.task
-def play_timed_reminder(ctx, reminder):
+async def play_timed_reminder(ctx, reminder):
     needs_archive = False
 
     if reminder.client_name in ctx.bot.clients:
@@ -69,7 +69,7 @@ def play_timed_reminder(ctx, reminder):
 
         if reminder.channel in client.channels:
             if reminder.who in client.channels[reminder.channel]["users"]:
-                client.message(reminder.channel, ctx._("{who}: {origin} wanted you to know: {message}").format(
+                await client.message(reminder.channel, ctx._("{who}: {origin} wanted you to know: {message}").format(
                     who=reminder.who,
                     origin=reminder.origin,
                     message=reminder.message

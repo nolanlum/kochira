@@ -4,11 +4,9 @@ Wordnik lookup.
 Retrieves definitions of terms from Wordnik.
 """
 
-import requests
-
 from urllib.parse import quote_plus
 from kochira import config
-from kochira.service import Service, background, Config
+from kochira.service import Service, Config
 
 service = Service(__name__, __doc__)
 
@@ -20,19 +18,18 @@ class Config(Config):
 @service.command(r"!define (?P<term>.+?)(?: (?P<num>\d+))?$")
 @service.command(r"define (?P<term>.+?)(?: \((?P<num>\d+)\))?\??$", mention=True)
 @service.command(r"what does (?P<term>.+) mean(?: \((?P<num>\d+)\))?\??$", mention=True)
-@background
-def define(ctx, term, num: int=None):
+async def define(ctx, term, num: int=None):
     """
     Define.
 
     Look up the given term on Wordnik.
     """
 
-    r = requests.get("http://api.wordnik.com/v4/word.json/{word}/definitions".format(
+    r = (await ctx.bot.http.get("http://api.wordnik.com/v4/word.json/{word}/definitions".format(
         word=quote_plus(term)
     ), params={
         "api_key": ctx.config.api_key
-    }).json()
+    })).json()
 
     if not r:
         ctx.respond(ctx._("I don't know what \"{term}\" means.").format(term=term))
