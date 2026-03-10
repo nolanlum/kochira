@@ -65,7 +65,7 @@ class ServiceConfigLoader(collections.abc.Mapping):
 
 
 def _config_class_factory(bot):
-    lang, _ = locale.getdefaultlocale()
+    lang = locale.getlocale()[0]
 
     service_config_loader = functools.partial(ServiceConfigLoader, bot)
     service_config_loader.get_default = lambda: {}

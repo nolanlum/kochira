@@ -11,7 +11,7 @@ humanize
 BeautifulSoup4
 pure-sasl
 docutils
-tornado==6.1
+tornado
 twitter
 pathlib
 https://github.com/rfk/pyenchant/tarball/master#egg=pyenchant

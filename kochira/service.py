@@ -99,7 +99,7 @@ class HookContext:
         return locale
 
     def _load_locale(self):
-        lang, _ = locale.getdefaultlocale()
+        lang = locale.getlocale()[0]
         languages = [self.locale, lang]
 
         try:

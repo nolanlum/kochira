@@ -47,7 +47,7 @@ class Client(_Client):
         bot.event_loop.create_task(client.connect(
             hostname=config.hostname,
             password=config.password,
-            source_address=(config.source_address, 0),
+            source_address=(config.source_address, 0) if config.source_address else None,
             port=config.port,
             tls=config.tls.enabled,
             tls_verify=config.tls.verify,
