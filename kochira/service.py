@@ -1,5 +1,4 @@
 import bisect
-import concurrent.futures
 import functools
 import gettext
 import inspect
@@ -175,7 +174,7 @@ class Service:
             f.patterns.add((pattern, mention))
 
             @functools.wraps(f)
-            def _command_handler(ctx, target, origin, message):
+            async def _command_handler(ctx, target, origin, message):
                 contexts = getattr(f, "contexts", set([]))
                 if contexts:
                     # check for contexts
@@ -229,8 +228,8 @@ class Service:
 
                 r = f(ctx, **kwargs)
 
-                if isinstance(r, concurrent.futures.Future):
-                    r = r.result()
+                if inspect.isawaitable(r):
+                    r = await r
 
                 if r is not None:
                     return r
