@@ -20,9 +20,9 @@ def setup_console(ctx):
     ctx.storage.console = code.InteractiveConsole({"bot": ctx.bot})
 
 
-@service.command(r">>>(?: (?P<code>.+))?", priority=3000)
+@service.command(r"(?P<quote>`?)>>>(?: (?P<code>.+))?(?P=quote)", priority=3000)
 @requires_permission("admin")
-def eval_code(ctx, code):
+def eval_code(ctx, code, **kwargs):
     """
     Evaluate code.
 
