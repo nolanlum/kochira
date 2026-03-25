@@ -43,6 +43,7 @@ class Client(_Client):
             sasl_username=config.sasl.username,
             sasl_password=config.sasl.password
         )
+        client.nickname = config.nickname
 
         bot.event_loop.create_task(client.connect(
             hostname=config.hostname,
