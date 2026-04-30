@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 class Client(_Client):
     RECONNECT_MAX_ATTEMPTS = None
+    CONNECT_TIMEOUT = 30
     context_factory = HookContext
 
     def __init__(self, bot, name, *args, **kwargs):
@@ -59,14 +60,38 @@ class Client(_Client):
     async def connect(self, **kwargs):
         logger.info("Connecting: %s", self.name)
         try:
-            await super().connect(**kwargs)
-        except (OSError, IOError) as e:
+            await asyncio.wait_for(super().connect(**kwargs),
+                                   timeout=self.CONNECT_TIMEOUT)
+        except (OSError, IOError, asyncio.TimeoutError) as e:
+            logger.warning("Connect to %s failed: %r", self.name, e)
+            try:
+                if self.connection and self.connection.writer is not None:
+                    self.connection.writer.close()
+            except Exception:
+                logger.exception("Error closing stale writer for %s", self.name)
             self._reset_attributes()
-            await self.on_disconnect(False)
+            self.bot.event_loop.create_task(self.on_disconnect(False))
 
     async def on_disconnect(self, expected):
         await super().on_disconnect(expected)
         await self._run_hooks("disconnect", None, None, [expected])
+
+    async def handle_forever(self):
+        # pydle's BasicClient.handle_forever only catches asyncio.TimeoutError;
+        # any other recv error (ConnectionResetError, OSError, ...) kills the
+        # task and skips the reconnect path entirely. Route those into
+        # disconnect(expected=False) so the normal reconnect logic runs.
+        try:
+            await super().handle_forever()
+        except (OSError, ConnectionError, EOFError) as e:
+            logger.warning("Connection lost on %s: %r", self.name, e)
+            try:
+                if self.connected:
+                    await self.disconnect(expected=False)
+                elif self.RECONNECT_ON_ERROR:
+                    self.bot.event_loop.create_task(self.on_disconnect(False))
+            except Exception:
+                logger.exception("Error during disconnect cleanup for %s", self.name)
 
     async def on_ctcp_version(self, by, what, contents):
         await self.ctcp_reply(by, "VERSION", self.bot.config.core.version)
@@ -96,16 +121,11 @@ class Client(_Client):
 
     async def message(self, target, message):
         message = self._autotruncate("PRIVMSG", target, message)
-
         await super(Client, self).message(target, message)
-        self._add_to_backlog(target, self.nickname, message)
-        await self._run_hooks("own_message", target, self.nickname, [target, message])
 
     async def notice(self, target, message):
         message = self._autotruncate("NOTICE", target, message)
-
         await super(Client, self).notice(target, message)
-        await self._run_hooks("own_notice", target, self.nickname, [target, message])
 
     async def _run_hooks(self, name, target, origin, args=None, kwargs=None):
         try:
@@ -162,20 +182,33 @@ class Client(_Client):
 
     async def on_channel_message(self, target, by, message):
         self._add_to_backlog(target, by, message)
-        await self._run_hooks("channel_message", target, by, [target, by, message])
+        if self.is_same_nick(by, self.nickname):
+            await self._run_hooks("own_message", target, by, [target, message])
+        else:
+            await self._run_hooks("channel_message", target, by, [target, by, message])
 
     async def on_private_message(self, target, by, message):
-        self._add_to_backlog(by, by, message)
-        await self._run_hooks("private_message", by, by, [by, message])
+        if self.is_same_nick(by, self.nickname):
+            self._add_to_backlog(target, by, message)
+            await self._run_hooks("own_message", target, by, [target, message])
+        else:
+            self._add_to_backlog(by, by, message)
+            await self._run_hooks("private_message", by, by, [by, message])
 
     async def on_nick_change(self, old, new):
         await self._run_hooks("nick_change", new, new, [old, new])
 
     async def on_channel_notice(self, target, by, message):
-        await self._run_hooks("channel_notice", target, by, [target, by, message])
+        if self.is_same_nick(by, self.nickname):
+            await self._run_hooks("own_notice", target, by, [target, message])
+        else:
+            await self._run_hooks("channel_notice", target, by, [target, by, message])
 
     async def on_private_notice(self, target, by, message):
-        await self._run_hooks("private_notice", by, by, [by, message])
+        if self.is_same_nick(by, self.nickname):
+            await self._run_hooks("own_notice", target, by, [target, message])
+        else:
+            await self._run_hooks("private_notice", by, by, [by, message])
 
     async def on_part(self, channel, user, message=None):
         await self._run_hooks("part", channel, user, [channel, user, message])
